@@ -41,7 +41,7 @@ curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/install
 
 | Платформа     | Клиент   | Где взять                     |
 |---------------|----------|-------------------------------|
-| **iOS/macOS** | Hiddify  | [App Store (бесплатно)](https://apps.apple.com/us/app/hiddify-proxy-vpn/id6476525885) |
+| **iOS/macOS** | Hiddify  | [GitHub Releases](https://github.com/hiddify/hiddify-app/releases)|
 | **Android**   | Hiddify  | [GitHub Releases](https://github.com/hiddify/hiddify-app/releases) |
 | **Windows**   | Hiddify  | [GitHub Releases](https://github.com/hiddify/hiddify-app/releases) |
 
