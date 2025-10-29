@@ -84,7 +84,7 @@ DNS-запросы → через Xray (если включён remote DNS)
 - SearXNG: cd /opt/searxng && git pull && pip install -r requirements.txt
 - Perplexica: cd /opt/perplexica && git pull && pnpm install && pnpm run build
 - 
-## 📜 Лицензия [LICENSE] (LICENSE)
+## 📜 Лицензия [LICENSE](LICENSE)
 >MIT — используйте свободно, но на свой страх и риск.
 
 ✨ Создано для тех, кто ценит приватность, минимализм и контроль. 
