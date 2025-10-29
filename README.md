@@ -42,16 +42,13 @@ curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/install
 - Выведет Trojan-ссылку и QR-код
 
 ## 📱 Клиенты для устройств
-```
 | Платформа     | Клиент         | Где взять                     |
 |---------------|----------------|-------------------------------|
-| **iOS/macOS** | **Shadowrocket** | [App Store](https://apps.apple.com/app/shadowrocket/id932747118) |
+| **iOS/macOS** | Shadowrocket   | [App Store](https://apps.apple.com/app/shadowrocket/id932747118) |
 | Android       | v2rayNG        | [GitHub Releases](https://github.com/2dust/v2rayNG) |
 | Windows       | v2rayN         | [GitHub Releases](https://github.com/2dust/v2rayN) |
-```
-> 💡 **Обязательно включите «Remote DNS»** в настройках клиента!
 
-💡 В клиенте обязательно включите «Use Remote DNS»! 
+> 💡 **Обязательно включите «Use Remote DNS»** в настройках клиента!
 
 ## 🔐 Приватность и безопасность
 Все запросы к SearXNG идут через ваш VPS → **ваш IP скрыт**
