@@ -80,10 +80,10 @@ DNS-запросы → через Xray (если включён remote DNS)
 >❌ Не используйте Ollama — требует 6+ ГБ RAM. 
 
 🛡️ Обновление
-- Xray: bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
-- SearXNG: cd /opt/searxng && git pull && pip install -r requirements.txt
-- Perplexica: cd /opt/perplexica && git pull && pnpm install && pnpm run build
-- 
+- Xray: `bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install`
+- SearXNG: `cd /opt/searxng && git pull && pip install -r requirements.txt`
+- Perplexica: `cd /opt/perplexica && git pull && pnpm install && pnpm run build`
+
 ## 📜 Лицензия [MIT License](LICENSE)
 >MIT — используйте свободно, но на свой страх и риск.
 
@@ -96,4 +96,4 @@ DNS-запросы → через Xray (если включён remote DNS)
    wget https://raw.githubusercontent.com/ваш_аккаунт/private-stack/main/install-private-stack.sh
    chmod +x install-private-stack.sh
    sudo ./install-private-stack.sh
-
+   ```
