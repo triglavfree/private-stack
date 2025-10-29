@@ -35,7 +35,7 @@ curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/install
 - Настроит nginx-light с HTTP → HTTPS редиректом
 - Запустит временный Cloudflare Tunnel (без браузера, без домена)
 - Настроит ufw + fail2ban
-- Выведет Trojan-ссылку и QR-код
+- Выведет VLESS + REALITY + Vision -ссылку и QR-код
 
 ## 📱 Клиенты для устройств
 
