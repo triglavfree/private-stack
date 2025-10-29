@@ -1,53 +1,41 @@
 #!/bin/bash
 # install-private-stack.sh
-# Приватный стек: Xray (Trojan) + SearXNG + Perplexica + (опц.) Passwordless
-# Совместим с v2rayNG, v2rayN, Streisand, Shadowrocket
-# Требует: Ubuntu 24.04, 1 CPU, 1 GB RAM
+# Private Stack: Xray (Trojan) + SearXNG + Perplexica
+# Без Docker, под 1 ГБ RAM, совместим с iOS/macOS
 
 set -e
 
-BOLD='\033[1m'
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-log() {
-    echo -e "${GREEN}[+]${NC} $1"
-}
-error() {
-    echo -e "${RED}[-]${NC} $1"
-    exit 1
-}
+log() { echo -e "\033[0;32m[+]\033[0m $1"; }
+error() { echo -e "\033[0;31m[-]\033[0m $1"; exit 1; }
 
 # === Проверка ОС ===
-log "Проверка ОС..."
 if ! grep -q "Ubuntu" /etc/os-release || ! grep -q "24.04\|22.04" /etc/os-release; then
-    error "Поддерживаются только Ubuntu 22.04 и 24.04"
+    error "Требуется Ubuntu 22.04 или 24.04"
 fi
 
-# === Создание swap (для сборки Perplexica) ===
-log "Создание временного swap-файла (2 ГБ)..."
+# === Swap для сборки ===
 if [ ! -f /swapfile ]; then
+    log "Создание swap-файла (2 ГБ)..."
     fallocate -l 2G /swapfile
     chmod 600 /swapfile
     mkswap /swapfile
     swapon /swapfile
-    echo '/swapfile none swap sw 0 0' | tee -a /etc/fstab
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
 
-# === Установка Xray (Trojan + TLS) ===
+# === Установка Xray (официальный скрипт) ===
 log "Установка Xray-core..."
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 
 IP=$(curl -s ifconfig.me)
-TROJAN_PASS=$(openssl rand -base64 32 | tr -d "=+/")
+PASS=$(openssl rand -base64 32 | tr -d "=+/")
 
-# Генерация сертификата
+# === Генерация TLS-сертификата ===
 mkdir -p /usr/local/etc/xray
 openssl req -x509 -nodes -newkey rsa:2048 -keyout /usr/local/etc/xray/privkey.pem \
   -out /usr/local/etc/xray/cert.pem -days 3650 -subj "/CN=$IP.nip.io"
 
-# Конфиг Xray
+# === Конфиг: Trojan + TLS + локальный прокси ===
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": { "loglevel": "warning" },
@@ -56,7 +44,7 @@ cat > /usr/local/etc/xray/config.json <<EOF
       "port": 443,
       "protocol": "trojan",
       "settings": {
-        "clients": [{ "password": "$TROJAN_PASS" }],
+        "clients": [{ "password": "$PASS" }],
         "fallbacks": [{ "dest": 80 }]
       },
       "streamSettings": {
@@ -83,7 +71,7 @@ cat > /usr/local/etc/xray/config.json <<EOF
 EOF
 
 systemctl restart xray
-log "Xray запущен как Trojan + TLS"
+log "✅ Xray (Trojan + TLS) запущен"
 
 # === Установка SearXNG (без Docker) ===
 log "Установка SearXNG..."
@@ -98,13 +86,18 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 cp utils/searx/settings.yml searxng/settings.yml
-sed -i 's/json_output: false/json_output: true/' searxng/settings.yml
-sed -i '/^engines:/,/^$/ s/#.*wolframalpha/wolframalpha/' searxng/settings.yml
+
+# Включить JSON
+sed -i 's/json_output:.*/json_output: true/' searxng/settings.yml
+
+# Включить Wolfram Alpha (без ключа)
+sed -i '/^- name: wolframalpha/s/^#//' searxng/settings.yml
+sed -i '/^- name: wolframalpha/,+3 s/^#//' searxng/settings.yml
 
 cp utils/searx/systemd/searx.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now searx
-log "SearXNG запущен на http://127.0.0.1:8888"
+log "✅ SearXNG запущен на http://127.0.0.1:8888"
 
 # === Установка Perplexica (без Docker) ===
 log "Установка Perplexica..."
@@ -115,9 +108,6 @@ git clone https://github.com/ItzCrazyKns/Perplexica.git /opt/perplexica
 cd /opt/perplexica
 pnpm install
 pnpm run build
-
-cp sample.config.toml config.toml
-# Настройка через UI — пользователь укажет API-ключи сам
 
 cat > /etc/systemd/system/perplexica.service <<EOF
 [Unit]
@@ -138,22 +128,20 @@ WantedBy=multi-user.target
 EOF
 
 systemctl enable --now perplexica
-log "Perplexica запущена на http://$IP:3000"
+log "✅ Perplexica запущена на http://$IP:3000"
 
 # === Финал ===
-SHARELINK="trojan://$TROJAN_PASS@$IP:443?security=tls&sni=$IP.nip.io#PrivateStack"
+SHARELINK="trojan://$PASS@$IP:443?security=tls&sni=$IP.nip.io#PrivateStack"
 
-echo ""
-echo -e "${BOLD}✅ Установка завершена!${NC}"
-echo ""
+echo
+echo "🎉 Установка завершена!"
+echo
 echo "🔗 Ссылка для подключения:"
 echo "$SHARELINK"
-echo ""
-echo "🌐 Perplexica: http://$IP:3000"
-echo ""
+echo
 echo "📱 Клиенты:"
-echo "   Android: v2rayNG (https://github.com/2dust/v2rayNG/releases)"
-echo "   Windows: v2rayN (https://github.com/2dust/v2rayN/releases)"
-echo "   iOS/macOS: Streisand (https://testflight.apple.com/join/whnE5j9F)"
-echo ""
-echo "💡 Включите «Use Remote DNS» в клиенте для полной защиты от утечек!"
+echo "   Android: v2rayNG"
+echo "   Windows: v2rayN"
+echo "   iOS/macOS: Streisand (TestFlight)"
+echo
+echo "💡 Обязательно включите «Use Remote DNS» в клиенте!"
