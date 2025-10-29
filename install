@@ -257,22 +257,15 @@ systemctl restart xray nginx
 
 echo
 echo "🎉 Установка завершена!"
-echo
 echo "🔗 Trojan-ссылка для подключения:"
 echo "$SHARELINK"
 echo
 echo "🌐 Cloudflare Tunnel или fallback:"
 echo "$CF_URL"
 echo
-echo "📱 Клиенты:"
-echo "   iOS/macOS: Shadowrocket (App Store)"
-echo "   Android: v2rayNG"
-echo "   Windows: v2rayN"
-echo
+echo "📱 Клиенты: hiddify"
 echo "💡 Советы:"
-echo "   - Включите «Remote DNS» в клиенте"
 echo "   - SearXNG доступен только через прокси (127.0.0.1:8888)"
 echo "   - Ваш IP скрыт благодаря Cloudflare Tunnel"
-echo
-echo "🔄 Обновление: sudo private-stack-update"
-echo "🔑 Ссылка основного пользователя: sudo mainuser"
+echo "🔄 Обновление: private-stack-update"
+echo "🔑 Ссылка основного пользователя: mainuser"
