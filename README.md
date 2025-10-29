@@ -44,7 +44,7 @@ curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/install
 ## 📱 Клиенты для устройств
 | Платформа     | Клиент         | Где взять                     |
 |---------------|----------------|-------------------------------|
-| **iOS/macOS** | Shadowrocket   | [App Store](https://apps.apple.com/app/shadowrocket/id932747118) |
+| iOS/macOS     | Shadowrocket   | [App Store](https://apps.apple.com/app/shadowrocket/id932747118) |
 | Android       | v2rayNG        | [GitHub Releases](https://github.com/2dust/v2rayNG) |
 | Windows       | v2rayN         | [GitHub Releases](https://github.com/2dust/v2rayN) |
 
