@@ -45,8 +45,6 @@ curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/install
 | **Android**   | Hiddify  | [GitHub Releases](https://github.com/hiddify/hiddify-app/releases) |
 | **Windows**   | Hiddify  | [GitHub Releases](https://github.com/hiddify/hiddify-app/releases) |
 
-> 💡 **Обязательно включите «Remote DNS»** в настройках профиля!
-
 > 💡 **Обязательно включите «Use Remote DNS»** в настройках клиента!
 
 ## 🔐 Приватность и безопасность
