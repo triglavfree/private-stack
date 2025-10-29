@@ -38,11 +38,14 @@ curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/install
 - Выведет Trojan-ссылку и QR-код
 
 ## 📱 Клиенты для устройств
-| Платформа     | Клиент         | Где взять                     |
-|---------------|----------------|-------------------------------|
-| iOS/macOS     | Shadowrocket   | [App Store](https://apps.apple.com/app/shadowrocket/id932747118) |
-| Android       | v2rayNG        | [GitHub Releases](https://github.com/2dust/v2rayNG) |
-| Windows       | v2rayN         | [GitHub Releases](https://github.com/2dust/v2rayN) |
+
+| Платформа     | Клиент   | Где взять                     |
+|---------------|----------|-------------------------------|
+| **iOS/macOS** | Hiddify  | [App Store (бесплатно)](https://apps.apple.com/us/app/hiddify-proxy-vpn/id6476525885) |
+| **Android**   | Hiddify  | [GitHub Releases](https://github.com/hiddify/hiddify-app/releases) |
+| **Windows**   | Hiddify  | [GitHub Releases](https://github.com/hiddify/hiddify-app/releases) |
+
+> 💡 **Обязательно включите «Remote DNS»** в настройках профиля!
 
 > 💡 **Обязательно включите «Use Remote DNS»** в настройках клиента!
 
