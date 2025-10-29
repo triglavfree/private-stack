@@ -5,7 +5,7 @@
 > Без Docker • Работает на 1 ГБ RAM
 
 ##  ✅ Возможности
-- **Xray в режиме Trojan + TLS** — обход DPI, совместим с **Shadowrocket (App Store)**, v2rayNG, v2rayN
+- **Xray в режиме Xray (REALITY + Vision)** — обход DPI, совместим с **Shadowrocket (App Store)**, v2rayNG, v2rayN
 - **Анонимный поиск** через [SearXNG](https://github.com/searxng/searxng) (локально, без логов, с Wolfram Alpha)
 - **Автоматический TLS** через **Let’s Encrypt** (с использованием IP.sslip.io)
 - **Скрытие IP** через **Cloudflare Tunnel** (бесплатный поддомен *.trycloudflare.com)
