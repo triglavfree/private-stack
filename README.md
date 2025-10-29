@@ -9,13 +9,12 @@
 
 ```txt
 private-stack/
-├── install-private-stack.sh
+├── install
 └── README.md
 ```
 
 ## ✅ Возможности
 
-- **Анонимный AI-поиск** через [Perplexica](https://github.com/ItzCrazyKns/Perplexica) (аналог Perplexity AI)
 - **Xray в режиме Trojan + TLS** — работает в **Shadowrocket, Streisand, v2rayNG, v2rayN**
 - **Маскировка IP** при поиске и запросах к LLM (всё идёт через ваш VPS)
 - **Блокировка трекеров** через SearXNG (метапоисковик)
@@ -36,9 +35,7 @@ private-stack/
 ## 🚀 Установка
 
 ```bash
-wget https://raw.githubusercontent.com/triglavfre/private-stack/main/install-private-stack.sh
-chmod +x install-private-stack.sh
-sudo ./install-private-stack.sh
+curl -sL https://triglavfree/private-stack//install | bash
 ```
 Скрипт автоматически:
 
