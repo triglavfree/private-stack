@@ -86,14 +86,3 @@ DNS-запросы → через Xray (если включён remote DNS)
 
 ## 📜 Лицензия [MIT](LICENSE)
 >MIT — используйте свободно, но на свой страх и риск.
-
-## 📌 Как использовать
-
-1. Создайте репозиторий на GitHub (например, `private-stack`)
-2. Загрузите туда `install-private-stack.sh` и `README.md`
-3. Запустите на VPS:
-   ```bash
-   wget https://raw.githubusercontent.com/ваш_аккаунт/private-stack/main/install-private-stack.sh
-   chmod +x install-private-stack.sh
-   sudo ./install-private-stack.sh
-   ```
