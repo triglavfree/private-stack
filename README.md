@@ -36,7 +36,7 @@ private-stack/
 ## 🚀 Установка
 
 ```bash
-wget https://raw.githubusercontent.com/ваш_аккаунт/private-stack/main/install-private-stack.sh
+wget https://raw.githubusercontent.com/triglavfre/private-stack/main/install-private-stack.sh
 chmod +x install-private-stack.sh
 sudo ./install-private-stack.sh
 ```
