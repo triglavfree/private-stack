@@ -34,8 +34,8 @@ curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/install
 
 - Создаст swap (если нужно)
 - Установит и настроит Xray (REALITY + Vision)
-- Получит валидный сертификат Let’s Encrypt для IP.sslip.io
 - Установит SearXNG через сверхбыстрый менеджер пакетов uv
+- Установит Vaultwarden и запустит его через Cloudflare Tunnel
 - Настроит nginx-light с HTTP → HTTPS редиректом
 - Запустит временный Cloudflare Tunnel (без браузера, без домена)
 - Настроит ufw + fail2ban
