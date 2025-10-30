@@ -324,7 +324,7 @@ cd /opt/searxng || exit 1
 git pull
 export PATH="$HOME/.local/bin:$PATH"
 source .venv/bin/activate
-uv pip install setuptools wheel msgspec
+uv pip install setuptools wheel msgspec pyyaml
 uv pip install --no-build-isolation -e .
 systemctl restart searx
 
