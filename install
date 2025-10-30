@@ -14,6 +14,15 @@ if ! grep -q "Ubuntu" /etc/os-release || ! grep -q "24.04\|22.04" /etc/os-releas
     error "Требуется Ubuntu 22.04 или 24.04"
 fi
 
+# Удалить старый Xray, если есть
+if command -v xray &>/dev/null; then
+    log "Обнаружен старый Xray. Останавливаем и удаляем..."
+    systemctl stop xray || true
+    systemctl disable xray || true
+    rm -f /usr/local/bin/xray
+    rm -rf /usr/local/etc/xray /var/log/xray
+    # Не удаляем пользователя, чтобы не сломать другие сервисы
+fi
 log "Установка пакетов..."
 DEBIAN_FRONTEND=noninteractive apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -40,9 +49,9 @@ ufw allow 443/udp comment "Xray REALITY (UDP, Vision)"
 ufw --force enable
 systemctl enable --now fail2ban
 
-# Xray с --no-logfiles
+# Xray
 log "Установка Xray-core..."
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-logfiles
+bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 
 # REALITY params
 REALITY_UUID=$(xray uuid)
