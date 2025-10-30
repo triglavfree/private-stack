@@ -111,10 +111,10 @@ export PATH="$HOME/.local/bin:$PATH"
 uv venv
 source .venv/bin/activate
 
-# Установка msgspec ДО сборки SearXNG
-uv pip install msgspec
+# Установка build-зависимостей
+uv pip install setuptools wheel msgspec
 
-# Установка SearXNG БЕЗ изоляции сборки
+# Установка SearXNG без изоляции сборки
 uv pip install --no-build-isolation -e .
 
 # Конфигурация
@@ -310,7 +310,7 @@ echo "\$URL" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/vw-url
 
-# Обновление — ИСПРАВЛЕНО
+# Обновление
 cat > /usr/local/bin/private-stack-update <<'EOF'
 #!/bin/bash
 set -e
@@ -324,7 +324,7 @@ cd /opt/searxng || exit 1
 git pull
 export PATH="$HOME/.local/bin:$PATH"
 source .venv/bin/activate
-uv pip install msgspec
+uv pip install setuptools wheel msgspec
 uv pip install --no-build-isolation -e .
 systemctl restart searx
 
