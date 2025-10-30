@@ -117,6 +117,10 @@ uv pip install pyyaml setuptools wheel msgspec
 # Установка SearXNG без изоляции сборки
 uv pip install --no-build-isolation -e .
 
+# Создание директории и загрузка примера конфигурации
+mkdir -p searxng
+curl -sL https://raw.githubusercontent.com/searxng/searxng/master/searxng/settings.yml -o searxng/settings.yml
+
 # Конфигурация
 mkdir -p searxng
 cp utils/searx/settings.yml searxng/settings.yml
