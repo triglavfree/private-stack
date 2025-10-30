@@ -189,7 +189,7 @@ server {
 }
 EOF
 nginx -t || { echo "❌ Ошибка в конфигурации Nginx"; exit 1; }
-systemctl reload nginx
+systemctl restart nginx
 
 # Vaultwarden
 log "Установка Vaultwarden..."
@@ -363,7 +363,7 @@ EOF
 chmod +x /usr/local/bin/private-stack-update
 
 # Финал
-systemctl restart xray nginx
+systemctl restart xray
 
 echo
 echo "🎉 Установка завершена!"
