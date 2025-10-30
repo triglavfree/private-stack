@@ -1,5 +1,5 @@
 #!/bin/bash
-# migrate-to-domain.sh — для будущего перехода на домен
+# migrate — для будущего перехода на домен
 
 set -euo pipefail
 
