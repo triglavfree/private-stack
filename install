@@ -107,10 +107,15 @@ cd /opt/searxng || exit 1
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 
-# Виртуальное окружение и установка
+# Создание виртуального окружения
 uv venv
 source .venv/bin/activate
-uv pip install -e .
+
+# Установка msgspec вручную (требуется для сборки)
+uv pip install msgspec
+
+# Установка SearXNG без изоляции сборки
+uv pip install --no-build-isolation -e .
 
 # Конфигурация
 mkdir -p searxng
