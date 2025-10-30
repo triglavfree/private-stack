@@ -6,7 +6,7 @@
 
 ##  ✅ Возможности
 - **Xray с REALITY + Vision** — маскировка под трафик Apple (Safari/iCloud) и Cloudflare
-- **Анонимный поиск** через [SearXNG](https://github.com/searxng/searxng) (локально, без логов, с Wolfram Alpha)
+- **Анонимный поиск** через [SearXNG](https://github.com/searxng/searxng) (локально, без логов)
 - **Менеджер паролей** через Vaultwarden (self-hosted Bitwarden)
 - **Защита от брутфорса**: ufw + fail2ban
 - **Заглушка-сай**т (nginx-light) — сервер выглядит как обычный HTTPS-сайт
