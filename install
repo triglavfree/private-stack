@@ -237,7 +237,43 @@ systemctl daemon-reload
 systemctl enable --now vaultwarden
 log "✅ Vaultwarden запущен на http://127.0.0.1:8080"
 
-cloudflared
+# cloudflared — только для Vaultwarden
+log "Установка cloudflared..."
+ARCH=$(uname -m)
+if [[ "$ARCH" == "x86_64" ]]; then
+    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+elif [[ "$ARCH" == "aarch64" ]]; then
+    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+else
+    error "Архитектура $ARCH не поддерживается"
+fi
+
+# Остановить, если запущен (защита от повторного запуска)
+systemctl stop cloudflared 2>/dev/null || true
+rm -f /usr/local/bin/cloudflared
+
+curl -L "$DL_URL" -o /usr/local/bin/cloudflared
+chmod +x /usr/local/bin/cloudflared
+
+cat > /etc/systemd/system/cloudflared.service <<EOF
+[Unit]
+Description=Cloudflare Tunnel (Vaultwarden only)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now cloudflared
+sleep 15
 
 VAULTWARDEN_URL=$(journalctl -u cloudflared -n 60 2>/dev/null | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1 || echo "не найден")
 
