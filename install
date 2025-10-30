@@ -100,28 +100,43 @@ log "✅ Xray (REALITY + Vision) запущен"
 # SearXNG
 log "Установка SearXNG..."
 git clone https://github.com/searxng/searxng.git /opt/searxng
-cd /opt/searxng
+cd /opt/searxng || exit 1
 
-# Установка uv
+# Установка uv (официальный способ)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="/root/.cargo/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"  # uv устанавливается сюда, а не в ~/.cargo/bin
 
-python3 -m venv venv
-source venv/bin/activate
-/root/.cargo/bin/uv pip install --system -r requirements.txt
+# Создание виртуального окружения и установка зависимостей через uv
+uv venv
+source .venv/bin/activate
+uv pip install -e .
+# Альтернатива (если вы предпочитаете requirements.txt напрямую):
+# uv pip install -r requirements.txt
 
+# Копирование и настройка конфигурации
+mkdir -p searxng
 cp utils/searx/settings.yml searxng/settings.yml
+
+# Настройка параметров
 sed -i 's/json_output:.*/json_output: true/' searxng/settings.yml
 sed -i 's|base_url:.*|base_url: http://127.0.0.1:8888|' searxng/settings.yml
 sed -i 's|port:.*|port: 8888|' searxng/settings.yml
 sed -i 's|bind_address:.*|bind_address: "127.0.0.1"|' searxng/settings.yml
 
-# Отключить все поисковые движки
-sed -i '/engines:/,/^$/ s/^\([[:space:]]*-[[:space:]]*name:[[:space:]]*\)/#\1/' searxng/settings.yml
+# Отключение всех поисковых движков, кроме duckduckgo и wolframalpha (как вы предпочитаете)
+sed -i '/^engines:/,/^[^-]/ { s/^\(-.*\)$/#\1/ }' searxng/settings.yml
+cat >> searxng/settings.yml <<EOF
 
-# Включить только duckduckgo
-sed -i '/^- name: duckduckgo/s/^#//' searxng/settings.yml
-sed -i '/^- name: duckduckgo/,+3 s/^#//' searxng/settings.yml
+engines:
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+  - name: wolframalpha
+    engine: wolframalpha
+    shortcut: wa
+    # Убедитесь, что у вас есть APP_ID для Wolfram Alpha, иначе закомментируйте
+    # app_id: YOUR_WOLFRAM_APP_ID
+EOF
 
 cp utils/searx/systemd/searx.service /etc/systemd/system/
 systemctl daemon-reload
