@@ -21,8 +21,8 @@ if command -v xray &>/dev/null; then
     systemctl disable xray || true
     rm -f /usr/local/bin/xray
     rm -rf /usr/local/etc/xray /var/log/xray
-    # Не удаляем пользователя, чтобы не сломать другие сервисы
 fi
+
 log "Установка пакетов..."
 DEBIAN_FRONTEND=noninteractive apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -97,33 +97,31 @@ EOF
 systemctl restart xray
 log "✅ Xray (REALITY + Vision) запущен"
 
-# SearXNG
-log "Установка SearXNG..."
+# SearXNG — ЧИСТАЯ УСТАНОВКА
+log "Установка SearXNG (чистая)..."
+rm -rf /opt/searxng
 git clone https://github.com/searxng/searxng.git /opt/searxng
 cd /opt/searxng || exit 1
 
-# Установка uv (официальный способ)
+# Установка uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"  # uv устанавливается сюда, а не в ~/.cargo/bin
+export PATH="$HOME/.local/bin:$PATH"
 
-# Создание виртуального окружения и установка зависимостей через uv
+# Виртуальное окружение и установка
 uv venv
 source .venv/bin/activate
 uv pip install -e .
-# Альтернатива (если вы предпочитаете requirements.txt напрямую):
-# uv pip install -r requirements.txt
 
-# Копирование и настройка конфигурации
+# Конфигурация
 mkdir -p searxng
 cp utils/searx/settings.yml searxng/settings.yml
 
-# Настройка параметров
 sed -i 's/json_output:.*/json_output: true/' searxng/settings.yml
 sed -i 's|base_url:.*|base_url: http://127.0.0.1:8888|' searxng/settings.yml
 sed -i 's|port:.*|port: 8888|' searxng/settings.yml
 sed -i 's|bind_address:.*|bind_address: "127.0.0.1"|' searxng/settings.yml
 
-# Отключение всех поисковых движков, кроме duckduckgo и wolframalpha (как вы предпочитаете)
+# Только DuckDuckGo и WolframAlpha
 sed -i '/^engines:/,/^[^-]/ { s/^\(-.*\)$/#\1/ }' searxng/settings.yml
 cat >> searxng/settings.yml <<EOF
 
@@ -134,16 +132,38 @@ engines:
   - name: wolframalpha
     engine: wolframalpha
     shortcut: wa
-    # Убедитесь, что у вас есть APP_ID для Wolfram Alpha, иначе закомментируйте
     # app_id: YOUR_WOLFRAM_APP_ID
 EOF
 
-cp utils/searx/systemd/searx.service /etc/systemd/system/
+# Создание пользователя и systemd-юнит
+if ! id searxng &>/dev/null; then
+    useradd --system --shell /usr/sbin/nologin --home-dir /opt/searxng searxng
+fi
+chown -R searxng:searxng /opt/searxng
+
+cat > /etc/systemd/system/searx.service <<EOF
+[Unit]
+Description=SearXNG meta-search engine
+After=network.target
+
+[Service]
+User=searxng
+Group=searxng
+WorkingDirectory=/opt/searxng
+ExecStart=/opt/searxng/.venv/bin/searxng
+Environment=SEARXNG_SETTINGS_PATH=/opt/searxng/searxng/settings.yml
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 systemctl daemon-reload
 systemctl enable --now searx
 log "✅ SearXNG запущен на http://127.0.0.1:8888"
 
-# Nginx заглушка (публичный HTTPS)
+# Nginx заглушка
 echo "<h1>Secure Private Stack</h1>" > /var/www/html/index.html
 cat > /etc/nginx/sites-available/default <<EOF
 server {
@@ -228,7 +248,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/cloudflared tunnel --url http://127.0.0.1:8080
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080
 Restart=always
 RestartSec=10
 User=root
@@ -285,7 +305,7 @@ echo "\$URL" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/vw-url
 
-# Обновление
+# Обновление — ИСПРАВЛЕНО
 cat > /usr/local/bin/private-stack-update <<'EOF'
 #!/bin/bash
 set -e
@@ -349,4 +369,4 @@ echo "💡 Команды:"
 echo "   - Ссылка Xray: mainuser"
 echo "   - Ссылка Vaultwarden: vw-url"
 echo "   - Обновление: private-stack-update"
-echo " SearXNG доступен только через прокси (127.0.0.1:8888)."
+echo "   - SearXNG доступен только через прокси (127.0.0.1:8888)."
