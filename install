@@ -121,10 +121,6 @@ uv pip install --no-build-isolation -e .
 mkdir -p searxng
 curl -sL https://raw.githubusercontent.com/searxng/searxng/master/searxng/settings.yml -o searxng/settings.yml
 
-# Конфигурация
-mkdir -p searxng
-cp utils/searx/settings.yml searxng/settings.yml
-
 sed -i 's/json_output:.*/json_output: true/' searxng/settings.yml
 sed -i 's|base_url:.*|base_url: http://127.0.0.1:8888|' searxng/settings.yml
 sed -i 's|port:.*|port: 8888|' searxng/settings.yml
