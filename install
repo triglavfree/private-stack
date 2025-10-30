@@ -188,6 +188,7 @@ server {
     index index.html;
 }
 EOF
+nginx -t || { echo "❌ Ошибка в конфигурации Nginx"; exit 1; }
 systemctl reload nginx
 
 # Vaultwarden
