@@ -19,7 +19,7 @@
 - **Скрытие IP** через **Cloudflare Tunnel** (бесплатный поддомен *.trycloudflare.com)
 
 ```bash
-curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/migrate | bash
+curl -sL https://raw.githubusercontent.com/triglavfree/main/migrate | bash
 ```
 
 ## 📦 Требования
@@ -32,7 +32,7 @@ curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/migrate
 ## 🚀 Установка
 
 ```bash
-curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/install | bash
+curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/install | bash
 ```
 Скрипт автоматически:
 
