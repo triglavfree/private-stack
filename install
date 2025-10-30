@@ -110,12 +110,9 @@ sed -i 's|bind_address:.*|bind_address: "127.0.0.1"|' searxng/settings.yml
 # Отключить все поисковые движки
 sed -i '/engines:/,/^$/ s/^\([[:space:]]*-[[:space:]]*name:[[:space:]]*\)/#\1/' searxng/settings.yml
 
-# Включить только duckduckgo и wolframalpha
+# Включить только duckduckgo
 sed -i '/^- name: duckduckgo/s/^#//' searxng/settings.yml
 sed -i '/^- name: duckduckgo/,+3 s/^#//' searxng/settings.yml
-
-sed -i '/^- name: wolframalpha/s/^#//' searxng/settings.yml
-sed -i '/^- name: wolframalpha/,+3 s/^#//' searxng/settings.yml
 
 cp utils/searx/systemd/searx.service /etc/systemd/system/
 systemctl daemon-reload
