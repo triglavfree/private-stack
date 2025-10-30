@@ -1,6 +1,6 @@
 #!/bin/bash
 # install
-# Private Stack v2.0: Xray (REALITY + Vision) + SearXNG + Vaultwarden
+# Private Stack v2.1: Xray (REALITY + Vision) + SearXNG + Vaultwarden
 # Без Docker. Без Let's Encrypt. Без sslip.io. Работает на 1 ГБ RAM, Ubuntu 22.04/24.04
 
 set -euo pipefail
@@ -40,9 +40,9 @@ ufw allow 443/udp comment "Xray REALITY (UDP, Vision)"
 ufw --force enable
 systemctl enable --now fail2ban
 
-# Xray
+# Xray с --no-logfiles
 log "Установка Xray-core..."
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-logfiles
 
 # REALITY params
 REALITY_UUID=$(xray uuid)
@@ -51,7 +51,7 @@ REALITY_PRIVATE_KEY=${REALITY_KEYPAIR[0]}
 REALITY_PUBLIC_KEY=${REALITY_KEYPAIR[1]}
 REALITY_SHORT_ID=$(openssl rand -hex 4)
 
-# Xray config (REALITY + Vision-ready)
+# Xray config (REALITY + Vision через gRPC)
 mkdir -p /usr/local/etc/xray
 cat > /usr/local/etc/xray/config.json <<EOF
 {
@@ -65,7 +65,7 @@ cat > /usr/local/etc/xray/config.json <<EOF
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "tcp",
+        "network": "grpc",
         "security": "reality",
         "realitySettings": {
           "show": false,
@@ -74,6 +74,9 @@ cat > /usr/local/etc/xray/config.json <<EOF
           "serverNames": ["icloud.com", "www.icloud.com"],
           "privateKey": "$REALITY_PRIVATE_KEY",
           "shortIds": ["$REALITY_SHORT_ID"]
+        },
+        "grpcSettings": {
+          "serviceName": "random"
         }
       }
     }
@@ -83,13 +86,14 @@ cat > /usr/local/etc/xray/config.json <<EOF
 EOF
 
 systemctl restart xray
-log "✅ Xray (REALITY) запущен"
+log "✅ Xray (REALITY + Vision) запущен"
 
 # SearXNG
 log "Установка SearXNG..."
 git clone https://github.com/searxng/searxng.git /opt/searxng
 cd /opt/searxng
 
+# Установка uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="/root/.cargo/bin:$PATH"
 
@@ -102,7 +106,10 @@ sed -i 's/json_output:.*/json_output: true/' searxng/settings.yml
 sed -i 's|base_url:.*|base_url: http://127.0.0.1:8888|' searxng/settings.yml
 sed -i 's|port:.*|port: 8888|' searxng/settings.yml
 sed -i 's|bind_address:.*|bind_address: "127.0.0.1"|' searxng/settings.yml
-sed -i '/^- name: wolframalpha/s/^#//' searxng/settings.yml
+
+# Отключить все движки, кроме wolframalpha
+sed -i '/engines:/,/^$/ s/^\([[:space:]]*-[[:space:]]*name:[[:space:]]*\)/#\1/' searxng/settings.yml
+sed -i '/^- name: wolframalpha/s/^//' searxng/settings.yml
 sed -i '/^- name: wolframalpha/,+3 s/^#//' searxng/settings.yml
 
 cp utils/searx/systemd/searx.service /etc/systemd/system/
@@ -110,7 +117,7 @@ systemctl daemon-reload
 systemctl enable --now searx
 log "✅ SearXNG запущен на http://127.0.0.1:8888"
 
-# Nginx заглушка
+# Nginx заглушка (публичный HTTPS)
 echo "<h1>Secure Private Stack</h1>" > /var/www/html/index.html
 cat > /etc/nginx/sites-available/default <<EOF
 server {
@@ -162,6 +169,7 @@ WorkingDirectory=$DATA_DIR
 ExecStart=$BIN_PATH
 Environment=ROCKET_PORT=8080
 Environment=ROCKET_ADDRESS=127.0.0.1
+Environment=ROCKET_WORKERS=2
 Environment=ADMIN_TOKEN=$ADMIN_TOKEN
 Restart=always
 RestartSec=3
@@ -172,9 +180,9 @@ EOF
 
 systemctl daemon-reload
 systemctl enable --now vaultwarden
-log "✅ Vaultwarden запущен на http://127.0.0.1:8880"
+log "✅ Vaultwarden запущен на http://127.0.0.1:8080"
 
-# cloudflared (только для Vaultwarden и заглушки)
+# cloudflared — только для Vaultwarden
 log "Установка cloudflared..."
 ARCH=$(uname -m)
 if [[ "$ARCH" == "x86_64" ]]; then
@@ -189,12 +197,12 @@ chmod +x /usr/local/bin/cloudflared
 
 cat > /etc/systemd/system/cloudflared.service <<EOF
 [Unit]
-Description=Cloudflare Tunnel (Vaultwarden + заглушка)
+Description=Cloudflare Tunnel (Vaultwarden only)
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:8080 --url https://localhost:443
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://127.0.0.1:8080
 Restart=always
 RestartSec=10
 User=root
@@ -212,9 +220,9 @@ VAULTWARDEN_URL=$(journalctl -u cloudflared -n 60 2>/dev/null | grep -o 'https:/
 # Ссылки и QR
 SERVER_IP=$(curl -4s ifconfig.me)
 
-# Vision-совместимая ссылка для Hiddify
 REALITY_LINK="vless://$REALITY_UUID@$SERVER_IP:443?encryption=none&security=reality&fp=safari&pbk=$REALITY_PUBLIC_KEY&sid=$REALITY_SHORT_ID&sni=icloud.com&type=grpc&serviceName=random&mode=multi&flow=xtls-rprx-vision#PrivateStack-Vision"
 
+# mainuser
 cat > /usr/local/bin/mainuser <<EOF
 #!/bin/bash
 IP=\$(curl -4s ifconfig.me)
@@ -230,12 +238,19 @@ echo "\$LINK" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
 
+# vw-url
 cat > /usr/local/bin/vw-url <<EOF
 #!/bin/bash
 URL=\$(journalctl -u cloudflared -n 60 | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1)
 if [[ -z "\$URL" ]]; then
-  echo "⚠️ URL не найден. Запустите: systemctl restart cloudflared"
-  exit 1
+  echo "⚠️ URL не найден. Перезапуск cloudflared..."
+  systemctl restart cloudflared
+  sleep 10
+  URL=\$(journalctl -u cloudflared -n 60 | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1)
+  if [[ -z "\$URL" ]]; then
+    echo "❌ URL так и не появился. Проверьте journalctl -u cloudflared"
+    exit 1
+  fi
 fi
 echo "🔗 Vaultwarden: \$URL"
 echo
@@ -251,7 +266,7 @@ set -e
 log() { echo -e "\033[0;32m[+]\033[0m $1"; }
 
 log "Обновление Xray..."
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-logfiles
 
 log "Обновление SearXNG..."
 cd /opt/searxng && git pull
