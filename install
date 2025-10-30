@@ -295,9 +295,11 @@ log "Обновление Xray..."
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-logfiles
 
 log "Обновление SearXNG..."
-cd /opt/searxng && git pull
-source venv/bin/activate
-/root/.cargo/bin/uv pip install --system -r requirements.txt
+cd /opt/searxng || exit 1
+git pull
+export PATH="$HOME/.local/bin:$PATH"
+source .venv/bin/activate
+uv pip install -e .
 systemctl restart searx
 
 log "Обновление Vaultwarden..."
