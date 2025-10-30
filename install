@@ -181,9 +181,6 @@ server {
 EOF
 
 nginx -t || { echo "❌ Ошибка в конфигурации Nginx"; exit 1; }
-systemctl restart nginx
-
-nginx -t || { echo "❌ Ошибка в конфигурации Nginx"; exit 1; }
 if systemctl is-active --quiet nginx; then
     systemctl reload nginx
 else
@@ -240,47 +237,7 @@ systemctl daemon-reload
 systemctl enable --now vaultwarden
 log "✅ Vaultwarden запущен на http://127.0.0.1:8080"
 
-# cloudflared — только для Vaultwarden
-log "Установка cloudflared..."
-ARCH=$(uname -m)
-if [[ "$ARCH" == "x86_64" ]]; then
-    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
-elif [[ "$ARCH" == "aarch64" ]]; then
-    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
-else
-    error "Архитектура $ARCH не поддерживается"
-fi
-
-# Остановить, если уже запущен (защита от повторного запуска скрипта)
-systemctl stop cloudflared || true
-
-# Удалить старый бинарник, если существует
-rm -f /usr/local/bin/cloudflared
-
-# Скачать новый
-curl -L "$DL_URL" -o /usr/local/bin/cloudflared
-chmod +x /usr/local/bin/cloudflared
-
-# Создать службу
-cat > /etc/systemd/system/cloudflared.service <<EOF
-[Unit]
-Description=Cloudflare Tunnel (Vaultwarden only)
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080
-Restart=always
-RestartSec=10
-User=root
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable --now cloudflared
-sleep 15
+cloudflared
 
 VAULTWARDEN_URL=$(journalctl -u cloudflared -n 60 2>/dev/null | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1 || echo "не найден")
 
