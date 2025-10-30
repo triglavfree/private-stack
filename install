@@ -1,30 +1,28 @@
 #!/bin/bash
-# install-private-stack-reality.sh
-# Xray (REALITY + Vision) + SearXNG + Nginx (fallback) + LE (для веба)
-# Без Docker, под 1 ГБ RAM, Ubuntu 22.04/24.04, совместимо с iOS/macOS
+# private-stack: Xray (REALITY) + SearXNG + Vaultwarden + Cloudflare Tunnel
+# Без домена, без Docker, под 1 ГБ RAM, Ubuntu 22.04/24.04
 
-set -e
-exec > >(tee -a /var/log/privatestack_reality_install.log) 2>&1
+set -euo pipefail
+exec > >(tee -a /var/log/privatestack_install.log) 2>&1
 
 log() { echo -e "\033[0;32m[+]\033[0m $1"; }
 error() { echo -e "\033[0;31m[-]\033[0m $1"; exit 1; }
 
 if [[ "$(id -u)" -ne 0 ]]; then error "Запускайте от root"; fi
-
 if ! grep -q "Ubuntu" /etc/os-release || ! grep -q "24.04\|22.04" /etc/os-release; then
     error "Требуется Ubuntu 22.04 или 24.04"
 fi
 
-# === Зависимости ===
+# === Установка зависимостей ===
 log "Установка пакетов..."
 DEBIAN_FRONTEND=noninteractive apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl git python3 python3-venv nginx-light ufw fail2ban \
-    certbot python3-certbot-nginx jq qrencode
+    jq qrencode
 
 # === Swap ===
 if ! swapon -s | grep -q "/swapfile"; then
-    log "Создание swap (2 ГБ)..."
+    log "Создание swap-файла (2 ГБ)..."
     fallocate -l 2G /swapfile
     chmod 600 /swapfile
     mkswap /swapfile
@@ -33,38 +31,25 @@ if ! swapon -s | grep -q "/swapfile"; then
 fi
 
 # === UFW + fail2ban ===
+log "Настройка UFW и fail2ban..."
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp comment "SSH"
-ufw allow 80/tcp comment "HTTP (LE + fallback)"
-ufw allow 443/tcp comment "HTTPS (REALITY)"
 ufw --force enable
 systemctl enable --now fail2ban
 
 # === Установка Xray ===
-log "Установка Xray..."
+log "Установка Xray-core..."
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 
-# === REALITY: генерация параметров ===
-log "Генерация REALITY ключей..."
-REALITY_OUTPUT=$(xray x25519 2>/dev/null)
-PRIVATE_KEY=$(echo "$REALITY_OUTPUT" | grep "Private key:" | cut -d ' ' -f3)
-PUBLIC_KEY=$(echo "$REALITY_OUTPUT" | grep "Public key:" | cut -d ' ' -f3)
-UUID=$(xray uuid)
-SHORT_ID=$(openssl rand -hex 4)  # 4 байта → 8 hex символов
+# === Генерация REALITY-параметров ===
+REALITY_UUID=$(xray uuid)
+REALITY_PRIVATE_KEY=$(xray x25519 | grep "Private key" | cut -d: -f2 | tr -d ' ')
+REALITY_PUBLIC_KEY=$(xray x25519 | grep "Public key" | cut -d: -f2 | tr -d ' ')
+REALITY_SHORT_ID=$(openssl rand -hex 4)
 
-DOMAIN="private-stack.site"
-IP=$(curl -4s ifconfig.me)
-
-# === Let's Encrypt для веб-заглушки (не для REALITY!) ===
-log "Получение сертификата для $DOMAIN (fallback)..."
-mkdir -p /var/www/html
-echo "server { listen 80; server_name $DOMAIN; root /var/www/html; }" > /etc/nginx/sites-enabled/default
-systemctl reload nginx
-certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email
-
-# === Конфиг Xray REALITY (ИСПРАВЛЕННЫЙ) ===
+# === Конфиг Xray (REALITY) ===
 mkdir -p /usr/local/etc/xray
 cat > /usr/local/etc/xray/config.json <<EOF
 {
@@ -74,24 +59,19 @@ cat > /usr/local/etc/xray/config.json <<EOF
       "port": 443,
       "protocol": "vless",
       "settings": {
-        "clients": [{ "id": "$UUID", "flow": "xtls-rprx-vision" }],
-        "decryption": "none",
-        "fallbacks": [
-          { "alpn": "h2", "dest": 80 },
-          { "dest": 80 }
-        ]
+        "clients": [{ "id": "$REALITY_UUID" }],
+        "decryption": "none"
       },
       "streamSettings": {
         "network": "tcp",
         "security": "reality",
         "realitySettings": {
           "show": false,
-          "dest": "www.cloudflare.com:443",
+          "dest": "google.com:443",
           "xver": 0,
-          "serverNames": ["www.cloudflare.com", "cloudflare.com"],
-          "privateKey": "$PRIVATE_KEY",
-          "publicKey": "$PUBLIC_KEY",
-          "shortIds": ["$SHORT_ID"]
+          "serverNames": ["google.com", "www.google.com"],
+          "privateKey": "$REALITY_PRIVATE_KEY",
+          "shortIds": ["$REALITY_SHORT_ID"]
         }
       }
     }
@@ -101,50 +81,172 @@ cat > /usr/local/etc/xray/config.json <<EOF
 EOF
 
 systemctl restart xray
+log "✅ Xray (REALITY) запущен"
 
-# === SearXNG (локально на 127.0.0.1:8888) ===
+# === Установка SearXNG ===
 log "Установка SearXNG..."
 git clone https://github.com/searxng/searxng.git /opt/searxng
 cd /opt/searxng
+
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="/root/.cargo/bin:$PATH"
+
 python3 -m venv venv
 source venv/bin/activate
-/root/.cargo/bin/uv pip install -r requirements.txt
+/root/.cargo/bin/uv pip install --system -r requirements.txt
+
 cp utils/searx/settings.yml searxng/settings.yml
 sed -i 's/json_output:.*/json_output: true/' searxng/settings.yml
+sed -i 's|base_url:.*|base_url: http://127.0.0.1:8888|' searxng/settings.yml
 sed -i 's|port:.*|port: 8888|' searxng/settings.yml
 sed -i 's|bind_address:.*|bind_address: "127.0.0.1"|' searxng/settings.yml
+sed -i '/^- name: wolframalpha/s/^#//' searxng/settings.yml
+sed -i '/^- name: wolframalpha/,+3 s/^#//' searxng/settings.yml
+
 cp utils/searx/systemd/searx.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now searx
+log "✅ SearXNG запущен на http://127.0.0.1:8888"
 
-# === Nginx: fallback на 80 порт ===
+# === Nginx: заглушка на 443 ===
+echo "<h1>Secure Private Stack</h1>" > /var/www/html/index.html
 cat > /etc/nginx/sites-available/default <<EOF
 server {
     listen 80;
-    server_name $DOMAIN;
+    listen 443 ssl http2;
+    server_name _;
+    ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
+    ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
     root /var/www/html;
     index index.html;
 }
 EOF
-echo "<h1>Private Stack</h1>" > /var/www/html/index.html
 systemctl reload nginx
 
-# === Скрипт для получения ссылки ===
+# === Установка Vaultwarden ===
+log "Установка Vaultwarden..."
+DOMAIN="vaultwarden"  # не используется, но для читаемости
+DATA_DIR="/var/lib/vaultwarden"
+BIN_PATH="/usr/local/bin/vaultwarden"
+USER="vaultwarden"
+
+if ! id "$USER" &>/dev/null; then
+  useradd --system --shell /usr/sbin/nologin --home-dir "$DATA_DIR" "$USER"
+fi
+
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64)   BIN_URL="https://github.com/dani-garcia/vaultwarden/releases/latest/download/vaultwarden-linux-x64" ;;
+  aarch64)  BIN_URL="https://github.com/dani-garcia/vaultwarden/releases/latest/download/vaultwarden-linux-arm64" ;;
+  *)        error "Архитектура $ARCH не поддерживается" ;;
+esac
+
+mkdir -p "$DATA_DIR"
+chown "$USER":"$USER" "$DATA_DIR"
+curl -L "$BIN_URL" -o "$BIN_PATH"
+chmod +x "$BIN_PATH"
+chown root:root "$BIN_PATH"
+
+ADMIN_TOKEN=$(openssl rand -hex 32)
+
+cat > /etc/systemd/system/vaultwarden.service <<EOF
+[Unit]
+Description=Vaultwarden Server
+After=network.target
+
+[Service]
+User=$USER
+Group=$USER
+WorkingDirectory=$DATA_DIR
+ExecStart=$BIN_PATH
+Environment=ROCKET_PORT=8080
+Environment=ROCKET_ADDRESS=127.0.0.1
+Environment=ADMIN_TOKEN=$ADMIN_TOKEN
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now vaultwarden
+log "✅ Vaultwarden запущен на http://127.0.0.1:8080"
+
+# === Установка cloudflared ===
+log "Установка cloudflared..."
+ARCH=$(uname -m)
+if [[ "$ARCH" == "x86_64" ]]; then
+    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+elif [[ "$ARCH" == "aarch64" ]]; then
+    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+else
+    error "Архитектура $ARCH не поддерживается"
+fi
+curl -L "$DL_URL" -o /usr/local/bin/cloudflared
+chmod +x /usr/local/bin/cloudflared
+
+# === Туннель для Xray (порт 443) ===
+cat > /etc/systemd/system/cloudflared-xray.service <<EOF
+[Unit]
+Description=Cloudflare Tunnel for Xray (REALITY)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel --url https://localhost:443
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# === Туннель для Vaultwarden (порт 8080) ===
+cat > /etc/systemd/system/cloudflared-vaultwarden.service <<EOF
+[Unit]
+Description=Cloudflare Tunnel for Vaultwarden
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:8080
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now cloudflared-xray cloudflared-vaultwarden
+
+sleep 15
+
+# === Получение URL из журналов ===
+XRAY_URL=$(journalctl -u cloudflared-xray -n 60 2>/dev/null | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1 || echo "не найден")
+VAULTWARDEN_URL=$(journalctl -u cloudflared-vaultwarden -n 60 2>/dev/null | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1 || echo "не найден")
+
+# === Генерация ссылок и QR ===
+REALITY_LINK="vless://$REALITY_UUID@$XRAY_URL:443?encryption=none&security=reality&fp=chrome&pbk=$REALITY_PUBLIC_KEY&sid=$REALITY_SHORT_ID&sni=google.com&type=tcp#PrivateStack-REALITY"
+
 cat > /usr/local/bin/mainuser <<EOF
 #!/bin/bash
-UUID=\$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
-PUBKEY=\$(jq -r '.inbounds[0].streamSettings.realitySettings.publicKey' /usr/local/etc/xray/config.json)
-SHORTID=\$(jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0]' /usr/local/etc/xray/config.json)
-DOMAIN="private-stack.site"
+REALITY_UUID=\$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
+REALITY_PUBLIC_KEY=\$(jq -r '.inbounds[0].streamSettings.realitySettings.publicKey // "'$REALITY_PUBLIC_KEY'"' /usr/local/etc/xray/config.json)
+REALITY_SHORT_ID=\$(jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0]' /usr/local/etc/xray/config.json)
+XRAY_URL=\$(journalctl -u cloudflared-xray -n 60 | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1)
 
-# URL-кодирование публичного ключа
-PUBKEY_ENCODED=\$(echo "\$PUBKEY" | sed 's/+/%2B/g; s/\//%2F/g')
+if [[ -z "\$XRAY_URL" ]]; then
+  echo "⚠️  URL Xray не найден. Запустите: systemctl restart cloudflared-xray"
+  exit 1
+fi
 
-LINK="vless://\$UUID@\$DOMAIN:443?encryption=none&security=reality&fp=chrome&pbk=\$PUBKEY_ENCODED&sid=\$SHORTID&sni=www.cloudflare.com&flow=xtls-rprx-vision&type=tcp#PrivateStack-REALITY"
+LINK="vless://\$REALITY_UUID@\$XRAY_URL:443?encryption=none&security=reality&fp=chrome&pbk=\$REALITY_PUBLIC_KEY&sid=\$REALITY_SHORT_ID&sni=google.com&type=tcp#PrivateStack-REALITY"
 
-echo "🔗 REALITY-ссылка:"
+echo "🔗 Xray REALITY:"
 echo "\$LINK"
 echo
 echo "📱 QR-код:"
@@ -152,7 +254,78 @@ echo "\$LINK" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
 
-log "✅ Установка завершена!"
+cat > /usr/local/bin/vw-url <<EOF
+#!/bin/bash
+URL=\$(journalctl -u cloudflared-vaultwarden -n 60 | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1)
+if [[ -z "\$URL" ]]; then
+  echo "⚠️  URL Vaultwarden не найден. Запустите: systemctl restart cloudflared-vaultwarden"
+  exit 1
+fi
+echo "🔗 Vaultwarden: \$URL"
 echo
-echo "Выполните команду: mainuser"
-echo "Поддерживаемые клиенты: Hiddify (рекомендуется), Shadowrocket (>=2.5), v2rayNG"
+echo "📱 QR-код:"
+echo "\$URL" | qrencode -t ansiutf8
+EOF
+chmod +x /usr/local/bin/vw-url
+
+# === Скрипт обновления ===
+cat > /usr/local/bin/private-stack-update <<'EOF'
+#!/bin/bash
+set -e
+log() { echo -e "\033[0;32m[+]\033[0m $1"; }
+
+log "Обновление Xray..."
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+
+log "Обновление SearXNG..."
+cd /opt/searxng && git pull
+source venv/bin/activate
+/root/.cargo/bin/uv pip install --system -r requirements.txt
+systemctl restart searx
+
+log "Обновление Vaultwarden..."
+ARCH=$(uname -m)
+if [[ "$ARCH" == "x86_64" ]]; then
+    DL_URL="https://github.com/dani-garcia/vaultwarden/releases/latest/download/vaultwarden-linux-x64"
+elif [[ "$ARCH" == "aarch64" ]]; then
+    DL_URL="https://github.com/dani-garcia/vaultwarden/releases/latest/download/vaultwarden-linux-arm64"
+fi
+curl -L "$DL_URL" -o /usr/local/bin/vaultwarden
+chmod +x /usr/local/bin/vaultwarden
+systemctl restart vaultwarden
+
+log "Обновление cloudflared..."
+ARCH=$(uname -m)
+if [[ "$ARCH" == "x86_64" ]]; then
+    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+elif [[ "$ARCH" == "aarch64" ]]; then
+    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+fi
+curl -L "$DL_URL" -o /usr/local/bin/cloudflared
+chmod +x /usr/local/bin/cloudflared
+systemctl restart cloudflared-xray cloudflared-vaultwarden
+
+log "✅ Все компоненты обновлены!"
+EOF
+chmod +x /usr/local/bin/private-stack-update
+
+# === Финал ===
+echo
+echo "🎉 Установка завершена!"
+echo
+echo "🔗 Xray REALITY (поддержка iOS/macOS/Android/Windows):"
+echo "$REALITY_LINK"
+echo
+echo "📱 QR-код Xray:"
+echo "$REALITY_LINK" | qrencode -t ansiutf8
+echo
+echo "🔗 Vaultwarden (менеджер паролей): $VAULTWARDEN_URL"
+echo
+echo "📱 QR-код Vaultwarden:"
+echo "$VAULTWARDEN_URL" | qrencode -t ansiutf8
+echo
+echo "💡 Команды:"
+echo "   - Ссылка Xray: mainuser"
+echo "   - Ссылка Vaultwarden: vw-url"
+echo "   - Обновление: private-stack-update"
+echo "   - SearXNG: только через прокси (127.0.0.1:8888)"
