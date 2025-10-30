@@ -112,7 +112,7 @@ uv venv
 source .venv/bin/activate
 
 # Установка build-зависимостей
-uv pip install setuptools wheel msgspec pyyaml
+uv pip install pyyaml setuptools wheel msgspec
 
 # Установка SearXNG без изоляции сборки
 uv pip install --no-build-isolation -e .
