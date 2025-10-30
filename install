@@ -189,7 +189,11 @@ server {
 }
 EOF
 nginx -t || { echo "❌ Ошибка в конфигурации Nginx"; exit 1; }
-systemctl restart nginx
+if systemctl is-active --quiet nginx; then
+    systemctl reload nginx
+else
+    systemctl start nginx
+fi
 
 # Vaultwarden
 log "Установка Vaultwarden..."
