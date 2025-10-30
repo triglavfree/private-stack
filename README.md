@@ -32,7 +32,7 @@ wget -qO- https://raw.githubusercontent.com/triglavfre/private-stack/main/migrat
 ## 🚀 Установка
 
 ```bash
-curl -sL https://raw.githubusercontent.com/triglavfre/private-stack/main/install | bash
+wget -qO- https://raw.githubusercontent.com/triglavfre/private-stack/main/install | bash
 ```
 Скрипт автоматически:
 
