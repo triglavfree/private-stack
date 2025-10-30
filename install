@@ -168,7 +168,6 @@ systemctl daemon-reload
 systemctl enable --now searx
 log "✅ SearXNG запущен на http://127.0.0.1:8888"
 
-# Nginx заглушка (публичный HTTPS на порту 80))
 # Nginx заглушка (только HTTP на порту 80)
 log "Настройка Nginx (только порт 80)..."
 echo "<h1>Secure Private Stack</h1>" > /var/www/html/index.html
@@ -251,9 +250,18 @@ elif [[ "$ARCH" == "aarch64" ]]; then
 else
     error "Архитектура $ARCH не поддерживается"
 fi
+
+# Остановить, если уже запущен (защита от повторного запуска скрипта)
+systemctl stop cloudflared || true
+
+# Удалить старый бинарник, если существует
+rm -f /usr/local/bin/cloudflared
+
+# Скачать новый
 curl -L "$DL_URL" -o /usr/local/bin/cloudflared
 chmod +x /usr/local/bin/cloudflared
 
+# Создать службу
 cat > /etc/systemd/system/cloudflared.service <<EOF
 [Unit]
 Description=Cloudflare Tunnel (Vaultwarden only)
