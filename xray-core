@@ -246,7 +246,7 @@ cat > $HOME/help <<'EOF'
 EOF
 
 LINK=$(mainuser)
-clear
+#clear
 
 echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
 echo
