@@ -270,9 +270,10 @@ cat > $HOME/help <<'EOF'
   update      — обновить ядро
 EOF
 
+clear
+
 # Финальный вывод
 LINK=$(mainuser)
-clear
 echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
 echo
 echo "Ссылка для подключения:"
