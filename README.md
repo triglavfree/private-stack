@@ -15,13 +15,13 @@
 
 ## 🚀 Установка
 Выберите только один из двух скриптов:
-### Для Xray-core:
+### Для [xray-core](https://github.com/XTLS/Xray-core):
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/xray-core | bash
 ```
 >⚠️ Не устанавливайте оба на один сервер — они конфликтуют за порт 443.
 
-### Для sing-box:
+### Для [sing-box](https://github.com/SagerNet/sing-box):
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-box | bash
 ```
