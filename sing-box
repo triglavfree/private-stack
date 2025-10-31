@@ -271,9 +271,8 @@ cat > $HOME/help <<'EOF'
   sharelink   — получить ссылку по номеру
   update      — обновить ядро
 EOF
-
-LINK=$(mainuser)
 clear
+LINK=$(mainuser)
 echo -e "${GREEN}✅ Установка sing-box (REALITY + Vision) завершена!${NC}"
 echo
 echo "Ссылка для подключения:"
