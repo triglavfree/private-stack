@@ -41,8 +41,8 @@ chmod +x /usr/local/bin/sing-box
 
 # === 4. Генерация ключей REALITY ===
 log "Генерация ключей REALITY"
-PRIVATE_KEY=$(/usr/local/bin/sing-box generate reality-key)
-PUB_KEY=$(echo "$PRIVATE_KEY" | /usr/local/bin/sing-box generate reality-pub)
+PRIVATE_KEY=$(printf '%s' "$(/usr/local/bin/sing-box generate reality-key)")
+PUB_KEY=$(echo -n "$PRIVATE_KEY" | /usr/local/bin/sing-box generate reality-pub)
 SID_VISION=$(openssl rand -hex 4)
 SID_NONVISION=$(openssl rand -hex 4)
 MAIN_PASSWORD=$(openssl rand -base64 32)
