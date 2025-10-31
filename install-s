@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # sing-box-install — Trojan + REALITY + CZ.NIC DoH
-# Полностью совместим с sing-box 1.11+
+# Полностью совместим с sing-box ≥ v1.11.0
 
 set -e
 
@@ -69,7 +69,7 @@ IP_ADDR=$IP_ADDR
 EOF
 chmod 600 "$KEYS_FILE"
 
-# === 5. Генерация конфига (новый синтаксис для ≥ v1.11) ===
+# === 5. Генерация конфига (совместимый с ≥ v1.11) ===
 log "Создание конфигурации sing-box"
 CONFIG_FILE="/etc/sing-box/config.json"
 
@@ -103,18 +103,26 @@ jq -n \
       "listen_port": 443,
       "sniff": true,
       "sniff_override_destination": true,
-      "users": [{"name": "main", "password": $pwd}],
+      "users": [
+        {
+          "name": "main",
+          "password": $pwd,
+          "flow": "xtls-rprx-vision"
+        }
+      ],
       "tls": {
         "enabled": true,
         "server_name": "icloud.com",
         "reality": {
           "enabled": true,
-          "handshake": {"server": "icloud.com", "server_port": 443},
+          "handshake": {
+            "server": "icloud.com",
+            "server_port": 443
+          },
           "private_key": $pk,
           "short_id": [$sid_v]
         }
-      },
-      "transport": {"type": "tcp", "tcp": {"flow": "xtls-rprx-vision"}}
+      }
     },
     {
       "type": "trojan",
@@ -123,13 +131,21 @@ jq -n \
       "listen_port": 443,
       "sniff": true,
       "sniff_override_destination": true,
-      "users": [{"name": "main", "password": $pwd}],
+      "users": [
+        {
+          "name": "main",
+          "password": $pwd
+        }
+      ],
       "tls": {
         "enabled": true,
         "server_name": "mail.yourdomain.com",
         "reality": {
           "enabled": true,
-          "handshake": {"server": "mail.yourdomain.com", "server_port": 443},
+          "handshake": {
+            "server": "mail.yourdomain.com",
+            "server_port": 443
+          },
           "private_key": $pk,
           "short_id": [$sid_nv]
         }
@@ -137,12 +153,21 @@ jq -n \
     }
   ],
   "outbounds": [
-    {"type": "direct", "tag": "direct"},
-    {"type": "block", "tag": "block"}
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
   ],
   "route": {
     "rules": [
-      {"protocol": "dns", "action": "dns"}
+      {
+        "protocol": "dns",
+        "action": "dns"
+      }
     ],
     "final": "direct"
   }
