@@ -6,64 +6,85 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Проверка root
 if [[ $EUID -ne 0 ]]; then
-   echo -e "${RED}Этот скрипт должен запускаться от root.${NC}" 
+   echo -e "${RED}Запустите от root.${NC}"
    exit 1
 fi
 
-# Функция обновления системы и установки net-tools
-update_system() {
-    echo -e "${GREEN}Обновление системы...${NC}"
-    apt update && apt upgrade -y
-    apt install -y net-tools curl wget gnupg
+# Создание swap при необходимости
+create_swap_if_needed() {
+    TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    TOTAL_MEM_GB=$((TOTAL_MEM_KB / 1024 / 1024))
+    if [ "$TOTAL_MEM_GB" -le 1 ]; then
+        if ! swapon --show | grep -q '/swapfile'; then
+            echo -e "${GREEN}Создание swap-файла 2 ГБ (RAM ≤ 1 ГБ)...${NC}"
+            fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+            chmod 600 /swapfile
+            mkswap /swapfile
+            swapon /swapfile
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab
+            echo 'vm.swappiness=10' >> /etc/sysctl.conf
+            echo 'vm.vfs_cache_pressure=50' >> /etc/sysctl.conf
+            sysctl -p >/dev/null 2>&1
+            echo -e "${GREEN}Swap создан.${NC}"
+        fi
+    fi
 }
 
-# Функция установки Xray
-install_xray() {
-    echo -e "${GREEN}Установка Xray...${NC}"
-    bash -c "$(curl -L https://github.com/XTLS/Xray-core/releases/latest/download/install.sh)" @ install
-}
+create_swap_if_needed
 
-# Функция обновления Xray
-update_xray() {
-    echo -e "${GREEN}Обновление Xray...${NC}"
-    bash -c "$(curl -L https://github.com/XTLS/Xray-core/releases/latest/download/install.sh)" @ install
-}
+# Обновление системы и установка зависимостей
+echo -e "${GREEN}Обновление системы...${NC}"
+apt update && apt upgrade -y
+apt install -y curl wget gnupg net-tools qrencode jq
 
-# Функция генерации конфигурации с DoH от CZ.NIC
-generate_config() {
-    local domain="$1"
-    local uuid="$2"
-    local reality_port="$3"
+# Установка Xray
+echo -e "${GREEN}Установка Xray-core...${NC}"
+bash -c "$(curl -L https://github.com/XTLS/Xray-core/releases/latest/download/install.sh)" @ install
 
-    echo -e "${GREEN}Генерация конфигурации Xray с DoH от CZ.NIC...${NC}"
+# Получение публичного IP
+IP=$(curl -4 -s icanhazip.com)
 
-    cat > /usr/local/etc/xray/config.json <<EOF
+# Генерация ключей
+UUID=$(xray uuid)
+REALITY_PRIV_KEY=$(xray x25519 | awk '/Private key/ {print $3}')
+REALITY_PUB_KEY=$(xray x25519 | awk '/Public key/ {print $3}')
+SHORT_ID=$(openssl rand -hex 4)
+
+# Сохранение ключей
+mkdir -p /usr/local/etc/xray
+cat > /usr/local/etc/xray/.keys <<EOF
+uuid: $UUID
+Private key: $REALITY_PRIV_KEY
+Password: $REALITY_PUB_KEY
+shortsid: $SHORT_ID
+EOF
+
+# Конфигурация с DoH CZ.NIC
+cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": {
     "loglevel": "warning"
   },
   "dns": {
     "servers": [
-      {
-        "address": "https://doh.nic.cz/dns-query",
-        "domains": ["geosite:category-ads-all"]
-      },
       "https://doh.nic.cz/dns-query"
     ],
     "tag": "doh-cznic"
   },
   "inbounds": [
     {
-      "port": $reality_port,
+      "port": 443,
       "protocol": "vless",
       "settings": {
         "clients": [
           {
-            "id": "$uuid"
+            "id": "$UUID",
+            "email": "main@example.com",
+            "flow": "xtls-rprx-vision"
           }
         ],
         "decryption": "none"
@@ -73,11 +94,11 @@ generate_config() {
         "security": "reality",
         "realitySettings": {
           "show": false,
-          "dest": "$domain:443",
+          "dest": "icloud.com:443",
           "xver": 0,
-          "serverNames": ["$domain"],
-          "privateKey": "YOUR_PRIVATE_KEY_PLACEHOLDER",
-          "shortIds": ["YOUR_SHORT_ID_PLACEHOLDER"]
+          "serverNames": ["icloud.com"],
+          "privateKey": "$REALITY_PRIV_KEY",
+          "shortIds": ["$SHORT_ID"]
         }
       }
     }
@@ -95,7 +116,7 @@ generate_config() {
       },
       "dnsSettings": {
         "server": "https://doh.nic.cz/dns-query",
-        "clientIp": "YOUR_VPS_PUBLIC_IP_PLACEHOLDER"
+        "clientIp": "$IP"
       }
     },
     {
@@ -108,11 +129,6 @@ generate_config() {
     "rules": [
       {
         "type": "field",
-        "inboundTag": ["api"],
-        "outboundTag": "api"
-      },
-      {
-        "type": "field",
         "port": "53",
         "outboundTag": "dns-out"
       }
@@ -121,36 +137,125 @@ generate_config() {
 }
 EOF
 
-    echo -e "${YELLOW}Не забудьте заменить YOUR_PRIVATE_KEY_PLACEHOLDER и YOUR_SHORT_ID_PLACEHOLDER на реальные значения!${NC}"
-    echo -e "${YELLOW}Также замените YOUR_VPS_PUBLIC_IP_PLACEHOLDER на ваш публичный IP (для EDNS в DoH).${NC}"
-}
+# Перезапуск службы
+systemctl daemon-reload
+systemctl enable --now xray
 
-# Основной интерфейс
-case "$1" in
-    install)
-        update_system
-        install_xray
-        echo -e "${GREEN}Xray установлен. Теперь настройте конфигурацию вручную или через generate_config.${NC}"
-        ;;
-    update)
-        update_xray
-        systemctl restart xray
-        echo -e "${GREEN}Xray обновлён и перезапущен.${NC}"
-        ;;
-    config)
-        if [ $# -ne 4 ]; then
-            echo -e "${RED}Использование: $0 config <domain> <uuid> <port>${NC}"
-            exit 1
-        fi
-        generate_config "$2" "$3" "$4"
-        systemctl restart xray
-        echo -e "${GREEN}Конфигурация обновлена и Xray перезапущен.${NC}"
-        ;;
-    *)
-        echo -e "${YELLOW}Использование:${NC}"
-        echo "  $0 install      — установить Xray и зависимости"
-        echo "  $0 update       — обновить Xray до последней версии"
-        echo "  $0 config <domain> <uuid> <port> — сгенерировать конфиг с DoH от CZ.NIC"
-        exit 1
-        ;;
-esac
+# Утилиты
+cat > /usr/local/bin/userlist <<'EOF'
+#!/bin/bash
+emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
+if [[ ${#emails[@]} -eq 0 ]]; then
+    echo "Список клиентов пуст"
+    exit 1
+fi
+echo "Список клиентов:"
+for i in "${!emails[@]}"; do
+    echo "$((i+1)). ${emails[$i]}"
+done
+EOF
+chmod +x /usr/local/bin/userlist
+
+cat > /usr/local/bin/mainuser <<EOF
+#!/bin/bash
+protocol=\$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
+port=\$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
+uuid=\$(awk -F': ' '/uuid/ {print \$2}' /usr/local/etc/xray/.keys)
+pbk=\$(awk -F': ' '/Password/ {print \$2}' /usr/local/etc/xray/.keys)
+sid=\$(awk -F': ' '/shortsid/ {print \$2}' /usr/local/etc/xray/.keys)
+sni=\$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
+ip=\$(curl -4 -s icanhazip.com)
+link="\$protocol://\$uuid@\$ip:\$port?security=reality&sni=\$sni&fp=firefox&pbk=\$pbk&sid=\$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-\$ip"
+echo "\$link"
+EOF
+chmod +x /usr/local/bin/mainuser
+
+cat > /usr/local/bin/newuser <<'EOF'
+#!/bin/bash
+read -p "Email: " email
+if [[ -z "$email" || "$email" == *" "* ]]; then echo "Неверный email"; exit 1; fi
+if jq -e --arg e "$email" '.inbounds[0].settings.clients[] | select(.email == $e)' /usr/local/etc/xray/config.json >/dev/null; then
+    echo "Уже существует"; exit 1
+fi
+uuid=$(xray uuid)
+jq --arg e "$email" --arg u "$uuid" '.inbounds[0].settings.clients += [{"email": $e, "id": $u, "flow": "xtls-rprx-vision"}]' /usr/local/etc/xray/config.json > /tmp/x.json && mv /tmp/x.json /usr/local/etc/xray/config.json
+systemctl restart xray
+protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
+port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
+pbk=$(awk -F': ' '/Password/ {print $2}' /usr/local/etc/xray/.keys)
+sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/xray/.keys)
+sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
+ip=$(curl -4 -s icanhazip.com)
+link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
+echo
+echo "Ссылка:"
+echo "$link"
+echo
+echo "QR:"
+echo "$link" | qrencode -t ansiutf8
+EOF
+chmod +x /usr/local/bin/newuser
+
+cat > /usr/local/bin/rmuser <<'EOF'
+#!/bin/bash
+emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
+if [[ ${#emails[@]} -eq 0 ]]; then echo "Нет клиентов"; exit 1; fi
+for i in "${!emails[@]}"; do echo "$((i+1)). ${emails[$i]}"; done
+read -p "Номер: " n
+if ! [[ "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#emails[@]} )); then echo "Ошибка"; exit 1; fi
+e="${emails[$((n-1))]}"
+jq --arg e "$e" '(.inbounds[0].settings.clients) |= map(select(.email != $e))' /usr/local/etc/xray/config.json > /tmp/x.json && mv /tmp/x.json /usr/local/etc/xray/config.json
+systemctl restart xray
+echo "Удалён: $e"
+EOF
+chmod +x /usr/local/bin/rmuser
+
+cat > /usr/local/bin/sharelink <<'EOF'
+#!/bin/bash
+emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
+if [[ ${#emails[@]} -eq 0 ]]; then echo "Нет клиентов"; exit 1; fi
+for i in "${!emails[@]}"; do echo "$((i+1)). ${emails[$i]}"; done
+read -p "Выбор: " n
+if ! [[ "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#emails[@]} )); then echo "Ошибка"; exit 1; fi
+email="${emails[$((n-1))]}"
+uuid=$(jq --arg e "$email" 'first(.inbounds[0].settings.clients[] | select(.email == $e) | .id)' /usr/local/etc/xray/config.json)
+protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
+port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
+pbk=$(awk -F': ' '/Password/ {print $2}' /usr/local/etc/xray/.keys)
+sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/xray/.keys)
+sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
+ip=$(curl -4 -s icanhazip.com)
+link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
+echo
+echo "Ссылка:"
+echo "$link"
+echo
+echo "QR:"
+echo "$link" | qrencode -t ansiutf8
+EOF
+chmod +x /usr/local/bin/sharelink
+
+cat > /usr/local/bin/update <<'EOF'
+#!/bin/bash
+echo "Обновление Xray..."
+bash -c "$(curl -L https://github.com/XTLS/Xray-core/releases/latest/download/install.sh)" @ install
+systemctl restart xray
+echo "Готово."
+EOF
+chmod +x /usr/local/bin/update
+
+# Финальный вывод
+LINK=$(mainuser)
+
+clear
+
+echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
+echo
+echo "Ссылка для подключения:"
+echo "$LINK"
+echo
+echo "QR-код:"
+echo "$LINK" | qrencode -t ansiutf8
+echo
+echo -e "${YELLOW}💡 Включите «Use Remote DNS» в клиенте (Hiddify, Shadowrocket и др.).${NC}"
+echo -e "${YELLOW}Проверка утечек: https://dnsleaktest.com${NC}"
