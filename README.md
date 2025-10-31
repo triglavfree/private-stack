@@ -49,7 +49,7 @@ curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-b
 После установки доступны команды:
 ```
 mainuser      # показать ссылку и QR-код основного пользователя
-userlist      # Вывести всех активных пользователей
+listuser      # Вывести список всех пользователей
 newuser       # создать нового пользователя
 rmuser        # удалить пользователя
 sharelink     # выбрать пользователя и получить ссылку/QR
