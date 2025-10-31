@@ -60,8 +60,8 @@ IP=$(curl -4 -s icanhazip.com)
 # Генерация UUID и ключей (ОДИН раз!)
 UUID=$(xray uuid)
 KEYPAIR=$(xray x25519)
-REALITY_PRIV_KEY=$(echo "$KEYPAIR" | awk '/Private key/ {print $3}')
-REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/Public key/ {print $3}')
+REALITY_PRIV_KEY=$(echo "$KEYPAIR" | awk '/^PrivateKey:/ {print $2}')
+REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^Password:/ {print $2}')
 SHORT_ID=$(openssl rand -hex 4)
 
 # Сохранение ключей
