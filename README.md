@@ -39,7 +39,7 @@ curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-b
 | **Windows**   | Hiddify  | [GitHub Releases](https://github.com/hiddify/hiddify-app/releases) |
 | **Linux**     | Hiddify  | [GitHub Releases](https://github.com/hiddify/hiddify-app/releases) |
 
->💡 Обязательно включите  «Use Remote DNS» в настройках клиента!
+>💡 Обязательно включите  «Use Remote DNS» в настройках клиента! режим VPN или Системный прокси (если понимаете разницу)
 
 ## 🛠 Управление пользователями
 После установки доступны команды:
