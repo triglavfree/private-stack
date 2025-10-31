@@ -282,5 +282,6 @@ echo
 echo "QR-код:"
 echo "$LINK" | qrencode -t ansiutf8
 echo
+echo
 echo -e "${RED}cat help"
-echo -e "${YELLOW}💡 Включите Use Remote DNS» в клиенте (Hiddify) и режим VPN.${NC}"
+echo -e "${YELLOW}💡 Включите Use Remote DNS» в клиенте (Hiddify) и режим VPN!${NC}"
