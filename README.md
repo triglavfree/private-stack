@@ -46,7 +46,7 @@ curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-b
 ```
 mainuser      # показать ссылку и QR-код основного пользователя
 listuser      # Вывести список всех пользователей
-newuser       # создать нового пользователя
+adduser       # создать нового пользователя
 rmuser        # удалить пользователя
 sharelink     # выбрать пользователя и получить ссылку/QR
 update        # Обновить ядро до последней версии и перезапустить службу
