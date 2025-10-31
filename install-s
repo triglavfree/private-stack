@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # sing-box-install — Trojan + REALITY + CZ.NIC DoH
-# Полная замена xray-install для sing-box
+# Полностью совместим с sing-box 1.11+
 
 set -e
 
@@ -38,7 +38,7 @@ curl -L "https://github.com/SagerNet/sing-box/releases/download/${SING_BOX_VERSI
 cp "/tmp/sing-box-${SING_BOX_VERSION#v}-linux-${ARCH_NAME}/sing-box" /usr/local/bin/sing-box
 chmod +x /usr/local/bin/sing-box
 
-# === 4. Генерация ключей REALITY (с учётом PrivateKey: формата) ===
+# === 4. Генерация ключей REALITY ===
 log "Генерация ключей REALITY"
 KEY_OUTPUT=$(/usr/local/bin/sing-box generate reality-keypair)
 PRIVATE_KEY=$(echo "$KEY_OUTPUT" | awk '/PrivateKey:/ {print $2}')
@@ -46,7 +46,7 @@ PUB_KEY=$(echo "$KEY_OUTPUT" | awk '/PublicKey:/ {print $2}')
 
 if [[ -z "$PRIVATE_KEY" || -z "$PUB_KEY" ]]; then
     log "Ошибка: не удалось извлечь ключи"
-    echo "Вывод генерации:"
+    echo "Вывод:"
     echo "$KEY_OUTPUT"
     exit 1
 fi
@@ -69,7 +69,7 @@ IP_ADDR=$IP_ADDR
 EOF
 chmod 600 "$KEYS_FILE"
 
-# === 5. Генерация конфига через jq (с CZ.NIC DoH) ===
+# === 5. Генерация конфига (новый синтаксис для ≥ v1.11) ===
 log "Создание конфигурации sing-box"
 CONFIG_FILE="/etc/sing-box/config.json"
 
@@ -138,12 +138,11 @@ jq -n \
   ],
   "outbounds": [
     {"type": "direct", "tag": "direct"},
-    {"type": "dns", "tag": "dns-out"},
     {"type": "block", "tag": "block"}
   ],
   "route": {
     "rules": [
-      {"protocol": "dns", "outbound": "dns-out"}
+      {"protocol": "dns", "action": "dns"}
     ],
     "final": "direct"
   }
