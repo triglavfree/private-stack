@@ -38,15 +38,24 @@ curl -L "https://github.com/SagerNet/sing-box/releases/download/${SING_BOX_VERSI
 cp "/tmp/sing-box-${SING_BOX_VERSION#v}-linux-${ARCH_NAME}/sing-box" /usr/local/bin/sing-box
 chmod +x /usr/local/bin/sing-box
 
-# === 4. Генерация ключей (новый синтаксис reality-keypair) ===
 log "Генерация ключей REALITY"
-KEYPAIR=$(/usr/local/bin/sing-box generate reality-keypair --json)
-PRIVATE_KEY=$(echo "$KEYPAIR" | jq -r .private_key)
-PUB_KEY=$(echo "$KEYPAIR" | jq -r .public_key)
-SID_VISION=$(openssl rand -hex 4)
-SID_NONVISION=$(openssl rand -hex 4)
-MAIN_PASSWORD=$(openssl rand -base64 32)
-IP_ADDR=$(curl -4 -s --max-time 3 https://icanhazip.com || echo "SERVER_IP")
+if KEY_JSON=$(/usr/local/bin/sing-box generate reality-keypair --json 2>/dev/null) && echo "$KEY_JSON" | jq -e .private_key >/dev/null 2>&1; then
+    PRIVATE_KEY=$(echo "$KEY_JSON" | jq -r .private_key)
+    PUB_KEY=$(echo "$KEY_JSON" | jq -r .public_key)
+    log "Ключи получены через --json (sing-box ≥ v1.10)"
+else
+    log "Откат на текстовый парсинг (sing-box < v1.10)"
+    KEY_TEXT=$(/usr/local/bin/sing-box generate reality-keypair)
+    PRIVATE_KEY=$(echo "$KEY_TEXT" | grep "Private key:" | awk '{print $3}' | tr -d '\n')
+    PUB_KEY=$(echo "$KEY_TEXT" | grep "Public key:" | awk '{print $3}' | tr -d '\n')
+fi
+
+if [[ -z "$PRIVATE_KEY" || -z "$PUB_KEY" || ${#PRIVATE_KEY} -lt 10 ]]; then
+    log "КРИТИЧЕСКАЯ ОШИБКА: не удалось сгенерировать ключи"
+    echo "Вывод генерации:"
+    /usr/local/bin/sing-box generate reality-keypair
+    exit 1
+fi
 
 # Сохраняем параметры
 KEYS_FILE="/etc/sing-box/.env"
