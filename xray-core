@@ -195,7 +195,6 @@ echo "$link"
 EOF
 chmod +x /usr/local/bin/mainuser
 
-# === ИЗМЕНЕНО: newuser → adduser ===
 cat > /usr/local/bin/adduser <<'EOF'
 #!/bin/bash
 read -p "Email: " email
@@ -270,7 +269,6 @@ echo "Готово."
 EOF
 chmod +x /usr/local/bin/update
 
-# Помощь (обновлено: newuser → adduser)
 cat > $HOME/help <<'EOF'
 Доступные команды:
   mainuser    — показать ссылку и QR основного пользователя
@@ -281,15 +279,18 @@ cat > $HOME/help <<'EOF'
   update      — обновить ядро
 EOF
 
-# Финальный вывод (без дублирования)
+# Финальный вывод
 clear
+echo
 echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
 echo
 
-# Генерация и вывод ссылки один раз
+# Генерация и вывод ссылки
 LINK=$(mainuser 2>/dev/null)
 if [[ -n "$LINK" && "$LINK" != *"IP_UNAVAILABLE"* ]]; then
+    echo
     echo "Ссылка для подключения:"
+    echo
     echo "$LINK"
     echo
     echo "QR-код:"
@@ -299,5 +300,5 @@ else
 fi
 
 echo
-echo -e "${RED}cat $HOME/help${NC}"
-echo -e "${YELLOW}💡 Включите «Use Remote DNS» в клиенте (Hiddify) и режим VPN.${NC}"
+echo -e "${GREEN} Введите cat help для списка команд${NC}"
+echo -e "${YELLOW}💡 Включите «Use Remote DNS» в клиенте (Hiddify) и режим VPN!${NC}"
