@@ -73,7 +73,7 @@ Password: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
 
-# Конфигурация с DoH CZ.NIC
+# Конфигурация с DoH Cloudflare
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": {
@@ -81,9 +81,9 @@ cat > /usr/local/etc/xray/config.json <<EOF
   },
   "dns": {
     "servers": [
-      "https://doh.nic.cz/dns-query"
+      "https://1.1.1.1/dns-query"
     ],
-    "tag": "doh-cznic"
+    "tag": "doh-cloudflare"
   },
   "inbounds": [
     {
@@ -125,8 +125,7 @@ cat > /usr/local/etc/xray/config.json <<EOF
         }
       },
       "dnsSettings": {
-        "server": "https://doh.nic.cz/dns-query",
-        "clientIp": "$IP"
+        "server": "https://1.1.1.1/dns-query"
       }
     },
     {
