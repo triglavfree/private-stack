@@ -43,6 +43,12 @@ echo -e "${GREEN}Установка Xray-core...${NC}"
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 
 IP=$(curl -4 -s icanhazip.com)
+echo "Генерация ключей..."
+KEYPAIR=$(xray x25519)
+echo "Сырой вывод x25519:"
+echo "$KEYPAIR"
+echo "-------------------"
+
 UUID=$(xray uuid)
 
 # Генерируем ключи ОДИН раз
