@@ -109,7 +109,7 @@ cat > /usr/local/etc/xray/config.json <<EOF
         "clients": [
           {
             "id": "$UUID",
-            "email": "main@example.com",
+            "email": "main",
             "flow": "xtls-rprx-vision"
           }
         ],
@@ -197,7 +197,7 @@ chmod +x /usr/local/bin/mainuser
 
 cat > /usr/local/bin/adduser <<'EOF'
 #!/bin/bash
-read -p "Email: " email
+read -p "Имя: " email
 if [[ -z "$email" || "$email" == *" "* ]]; then echo "Неверный email"; exit 1; fi
 if jq -e --arg e "$email" '.inbounds[0].settings.clients[] | select(.email == $e)' /usr/local/etc/xray/config.json >/dev/null; then
     echo "Уже существует"; exit 1
@@ -217,7 +217,7 @@ echo "Ссылка:"
 echo "$link"
 echo
 echo "QR:"
-echo "$link" | qrencode -t ansiutf8
+echo "$link" | qrencode -t ansiutf8 -s 2
 EOF
 chmod +x /usr/local/bin/adduser
 
@@ -256,7 +256,7 @@ echo "Ссылка:"
 echo "$link"
 echo
 echo "QR:"
-echo "$link" | qrencode -t ansiutf8
+echo "$link" | qrencode -t ansiutf8 -s 2
 EOF
 chmod +x /usr/local/bin/sharelink
 
