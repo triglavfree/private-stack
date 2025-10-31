@@ -1,0 +1,360 @@
+#!/bin/bash
+
+# Функция логирования
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+}
+
+# === 1. Обновление системы и установка зависимостей ===
+log "Обновление системы..."
+apt update && apt upgrade -y
+apt install -y curl jq openssl qrencode
+
+# === 2. Настройка UFW и fail2ban ===
+log "Установка UFW"
+apt install -y ufw
+ufw --force reset
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 22/tcp comment "SSH"
+ufw allow 443/tcp comment "sing-box REALITY (TCP)"
+ufw allow 443/udp comment "sing-box REALITY (UDP, Vision)"
+ufw --force enable
+
+log "Установка и включение fail2ban"
+apt install -y fail2ban
+systemctl enable --now fail2ban
+
+# === 3. Установка sing-box ===
+log "Установка sing-box"
+SING_BOX_VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
+ARCH=$(dpkg --print-architecture)
+case $ARCH in
+    amd64) ARCH_NAME="amd64" ;;
+    arm64) ARCH_NAME="arm64" ;;
+    *) echo "Архитектура $ARCH не поддерживается"; exit 1 ;;
+esac
+
+curl -L "https://github.com/SagerNet/sing-box/releases/download/${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION#v}-linux-${ARCH_NAME}.tar.gz" | tar xz -C /tmp
+cp "/tmp/sing-box-${SING_BOX_VERSION#v}-linux-${ARCH_NAME}/sing-box" /usr/local/bin/sing-box
+chmod +x /usr/local/bin/sing-box
+
+# === 4. Генерация ключей REALITY ===
+log "Генерация ключей REALITY"
+PRIVATE_KEY=$(/usr/local/bin/sing-box generate reality-key)
+PUB_KEY=$(echo "$PRIVATE_KEY" | /usr/local/bin/sing-box generate reality-pub)
+SID_VISION=$(openssl rand -hex 4)
+SID_NONVISION=$(openssl rand -hex 4)
+MAIN_PASSWORD=$(openssl rand -base64 32)
+
+# Сохраняем ключи для утилит
+KEYS_FILE="/etc/sing-box/.keys"
+mkdir -p /etc/sing-box
+cat > "$KEYS_FILE" <<EOF
+private_key: $PRIVATE_KEY
+public_key: $PUB_KEY
+sid_vision: $SID_VISION
+sid_nonvision: $SID_NONVISION
+password: $MAIN_PASSWORD
+EOF
+chmod 600 "$KEYS_FILE"
+
+# === 5. Конфигурация sing-box (Trojan + REALITY, два inbound) ===
+CONFIG_FILE="/etc/sing-box/config.json"
+IP_ADDR=$(curl -4 -s --max-time 3 https://icanhazip.com || echo "YOUR_SERVER_IP")
+
+cat > "$CONFIG_FILE" <<EOF
+{
+  "log": {
+    "disabled": false,
+    "level": "warn",
+    "output": "/var/log/sing-box.log"
+  },
+  "inbounds": [
+    {
+      "type": "trojan",
+      "tag": "reality-vision-in",
+      "listen": "0.0.0.0",
+      "listen_port": 443,
+      "sniff": true,
+      "sniff_override_destination": true,
+      "users": [
+        {
+          "name": "main",
+          "password": "$MAIN_PASSWORD"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "icloud.com",
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "icloud.com",
+            "server_port": 443
+          },
+          "private_key": "$PRIVATE_KEY",
+          "short_id": ["$SID_VISION"]
+        }
+      },
+      "transport": {
+        "type": "tcp",
+        "tcp": {
+          "flow": "xtls-rprx-vision"
+        }
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "reality-nonvision-in",
+      "listen": "0.0.0.0",
+      "listen_port": 443,
+      "sniff": true,
+      "sniff_override_destination": true,
+      "users": [
+        {
+          "name": "main",
+          "password": "$MAIN_PASSWORD"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "mail.yourdomain.com",
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "mail.yourdomain.com",
+            "server_port": 443
+          },
+          "private_key": "$PRIVATE_KEY",
+          "short_id": ["$SID_NONVISION"]
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ]
+}
+EOF
+
+# === 6. Systemd-юнит ===
+log "Настройка systemd для sing-box"
+useradd --system --user-group --home-dir /etc/sing-box sing-box
+
+cat > /etc/systemd/system/sing-box.service <<EOF
+[Unit]
+Description=sing-box service
+Documentation=https://sing-box.sagernet.org
+After=network.target nss-lookup.target
+
+[Service]
+User=sing-box
+Group=sing-box
+ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now sing-box
+
+# === 7. Утилиты управления пользователями (адаптированы под sing-box + Trojan) ===
+
+# userlist
+cat > /usr/local/bin/userlist <<'EOF'
+#!/bin/bash
+config="/etc/sing-box/config.json"
+emails=($(jq -r '.inbounds[].users[].name' "$config" | sort -u))
+
+if [[ ${#emails[@]} -eq 0 ]]; then
+    echo "Список клиентов пуст"
+    exit 1
+fi
+
+echo "Список клиентов:"
+for i in "${!emails[@]}"; do
+    echo "$((i+1)). ${emails[$i]}"
+done
+EOF
+chmod +x /usr/local/bin/userlist
+
+# mainuser (для Vision-клиента)
+cat > /usr/local/bin/mainuser <<'EOF'
+#!/bin/bash
+config="/etc/sing-box/config.json"
+keys="/etc/sing-box/.keys"
+
+password=$(jq -r '.inbounds[0].users[0].password' "$config")
+sni=$(jq -r '.inbounds[0].tls.server_name' "$config")
+pbk=$(awk -F': ' '/public_key/ {print $2}' "$keys")
+sid=$(awk -F': ' '/sid_vision/ {print $2}' "$keys")
+ip=$(timeout 3 curl -4 -s icanhazip.com || echo "YOUR_SERVER_IP")
+
+link="trojan://$password@$ip:443?security=reality&sni=$sni&fp=chrome&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision#Vision-$ip"
+
+echo ""
+echo "Ссылка для подключения (Vision):"
+echo "$link"
+echo ""
+echo "QR-код:"
+echo "$link" | qrencode -t ansiutf8
+EOF
+chmod +x /usr/local/bin/mainuser
+
+# newuser
+cat > /usr/local/bin/newuser <<'EOF'
+#!/bin/bash
+read -p "Введите имя пользователя (email): " email
+
+if [[ -z "$email" || "$email" == *" "* ]]; then
+    echo "Имя не может быть пустым или содержать пробелы."
+    exit 1
+fi
+
+config="/etc/sing-box/config.json"
+keys="/etc/sing-box/.keys"
+
+# Проверка дубликата
+if jq -e --arg e "$email" '.inbounds[].users[] | select(.name == $e)' "$config" >/dev/null; then
+    echo "Пользователь уже существует."
+    exit 1
+fi
+
+new_pass=$(openssl rand -base64 32)
+
+# Добавляем пользователя в оба inbound
+tmp_config=$(mktemp)
+jq --arg name "$email" --arg pass "$new_pass" '
+  .inbounds |= map(
+    .users += [{"name": $name, "password": $pass}]
+  )
+' "$config" > "$tmp_config" && mv "$tmp_config" "$config"
+
+systemctl reload sing-box
+
+sni=$(jq -r '.inbounds[0].tls.server_name' "$config")
+pbk=$(awk -F': ' '/public_key/ {print $2}' "$keys")
+sid=$(awk -F': ' '/sid_vision/ {print $2}' "$keys")
+ip=$(timeout 3 curl -4 -s icanhazip.com || echo "YOUR_SERVER_IP")
+
+link="trojan://$new_pass@$ip:443?security=reality&sni=$sni&fp=chrome&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision#$email"
+
+echo ""
+echo "Ссылка для подключения:"
+echo "$link"
+echo ""
+echo "QR-код:"
+echo "$link" | qrencode -t ansiutf8
+EOF
+chmod +x /usr/local/bin/newuser
+
+# rmuser
+cat > /usr/local/bin/rmuser <<'EOF'
+#!/bin/bash
+config="/etc/sing-box/config.json"
+emails=($(jq -r '.inbounds[].users[].name' "$config" | sort -u))
+
+if [[ ${#emails[@]} -eq 0 ]]; then
+    echo "Нет клиентов для удаления."
+    exit 1
+fi
+
+echo "Список клиентов:"
+for i in "${!emails[@]}"; do
+    echo "$((i+1)). ${emails[$i]}"
+done
+
+read -p "Введите номер клиента для удаления: " choice
+
+if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > ${#emails[@]} )); then
+    echo "Ошибка: номер должен быть от 1 до ${#emails[@]}"
+    exit 1
+fi
+
+selected_email="${emails[$((choice - 1))]}"
+tmp_config=$(mktemp)
+jq --arg email "$selected_email" '
+  .inbounds |= map(
+    .users |= map(select(.name != $email))
+  )
+' "$config" > "$tmp_config" && mv "$tmp_config" "$config"
+
+systemctl reload sing-box
+echo "Клиент $selected_email удалён."
+EOF
+chmod +x /usr/local/bin/rmuser
+
+# sharelink
+cat > /usr/local/bin/sharelink <<'EOF'
+#!/bin/bash
+config="/etc/sing-box/config.json"
+keys="/etc/sing-box/.keys"
+emails=($(jq -r '.inbounds[].users[].name' "$config" | sort -u))
+
+if [[ ${#emails[@]} -eq 0 ]]; then
+    echo "Нет клиентов."
+    exit 1
+fi
+
+for i in "${!emails[@]}"; do
+   echo "$((i + 1)). ${emails[$i]}"
+done
+
+read -p "Выберите клиента: " client
+
+if ! [[ "$client" =~ ^[0-9]+$ ]] || (( client < 1 || client > ${#emails[@]} )); then
+    echo "Ошибка: номер должен быть от 1 до ${#emails[@]}"
+    exit 1
+fi
+
+selected_email="${emails[$((client - 1))]}"
+password=$(jq --arg name "$selected_email" -r '.inbounds[].users[] | select(.name == $name) | .password' "$config" | head -n1)
+sni=$(jq -r '.inbounds[0].tls.server_name' "$config")
+pbk=$(awk -F': ' '/public_key/ {print $2}' "$keys")
+sid=$(awk -F': ' '/sid_vision/ {print $2}' "$keys")
+ip=$(timeout 3 curl -4 -s icanhazip.com || echo "YOUR_SERVER_IP")
+
+link="trojan://$password@$ip:443?security=reality&sni=$sni&fp=chrome&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision#$selected_email"
+
+echo ""
+echo "Ссылка для подключения:"
+echo "$link"
+echo ""
+echo "QR-код:"
+echo "$link" | qrencode -t ansiutf8
+EOF
+chmod +x /usr/local/bin/sharelink
+
+# === 8. Финальные шаги ===
+log "sing-box успешно настроен"
+/usr/local/bin/mainuser
+
+# Файл подсказок
+cat > "$HOME/help" <<'EOF'
+
+Команды для управления пользователями sing-box:
+
+    mainuser  - ссылка основного пользователя (Vision)
+    newuser   - создать нового пользователя
+    rmuser    - удалить пользователя
+    sharelink - выбрать пользователя и получить ссылку
+    userlist  - список всех клиентов
+
+Конфигурация: /etc/sing-box/config.json
+Перезагрузка: systemctl reload sing-box  (без downtime)
+
+EOF
+
+log "Установка завершена. Инструкции в $HOME/help"
