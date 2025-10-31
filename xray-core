@@ -39,7 +39,7 @@ echo -e "${GREEN}Обновление системы...${NC}"
 apt update && apt upgrade -y
 apt install -y curl wget gnupg net-tools qrencode jq
 
-# Установка и настройка фаервола (ufw + fail2ban)
+# Установка и настройка фаервола (ufw + fail2ban) — как обещано в README
 echo -e "${GREEN}Настройка ufw и fail2ban...${NC}"
 apt install -y ufw fail2ban
 ufw allow 443/tcp
@@ -55,14 +55,23 @@ if ! command -v xray &> /dev/null; then
     echo -e "${RED}Ошибка: xray не установлен или не в PATH.${NC}"
     exit 1
 fi
-
 if ! xray version &> /dev/null; then
     echo -e "${RED}Ошибка: xray установлен, но не запускается.${NC}"
     exit 1
 fi
 
-# Получение публичного IP
-IP=$(curl -4 -s icanhazip.com)
+# Получение публичного IP (с fallback на IPv6)
+IP=$(curl -4 -s icanhazip.com || curl -6 -s icanhazip.com)
+if [[ -z "$IP" ]]; then
+    echo -e "${RED}Не удалось определить публичный IP. Проверьте интернет-соединение.${NC}"
+    exit 1
+fi
+
+# Проверка занятости порта 443 (рекомендуется)
+if ss -tuln | grep -q ':443 '; then
+    echo -e "${RED}Порт 443 уже занят! Остановите nginx, apache или другой сервис.${NC}"
+    exit 1
+fi
 
 # Генерация UUID и ключей (ОДИН раз!)
 UUID=$(xray uuid)
@@ -80,7 +89,7 @@ Password: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
 
-# Конфигурация с DoH Cloudflare
+# Конфигурация с DoH Cloudflare и маскировкой под www.cloudflare.com
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": {
@@ -111,9 +120,9 @@ cat > /usr/local/etc/xray/config.json <<EOF
         "security": "reality",
         "realitySettings": {
           "show": false,
-          "dest": "icloud.com:443",
+          "dest": "www.cloudflare.com:443",
           "xver": 0,
-          "serverNames": ["icloud.com"],
+          "serverNames": ["www.cloudflare.com"],
           "privateKey": "$REALITY_PRIV_KEY",
           "shortIds": ["$SHORT_ID"]
         }
@@ -180,14 +189,9 @@ uuid=$(awk -F': ' '/uuid/ {print $2}' /usr/local/etc/xray/.keys)
 pbk=$(awk -F': ' '/Password/ {print $2}' /usr/local/etc/xray/.keys)
 sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/xray/.keys)
 sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
-ip=$(timeout 3 curl -4 -s icanhazip.com)
-link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-$ip"
-echo ""
-echo "Ссылка для подключения:"
+ip=$(timeout 3 curl -4 -s icanhazip.com || echo "IP_UNAVAILABLE")
+link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-$ip"
 echo "$link"
-echo ""
-echo "QR-код:"
-echo "$link" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
 
@@ -208,7 +212,7 @@ pbk=$(awk -F': ' '/Password/ {print $2}' /usr/local/etc/xray/.keys)
 sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/xray/.keys)
 sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
 ip=$(curl -4 -s icanhazip.com)
-link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
+link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
 echo
 echo "Ссылка:"
 echo "$link"
@@ -247,7 +251,7 @@ pbk=$(awk -F': ' '/Password/ {print $2}' /usr/local/etc/xray/.keys)
 sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/xray/.keys)
 sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
 ip=$(curl -4 -s icanhazip.com)
-link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
+link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
 echo
 echo "Ссылка:"
 echo "$link"
@@ -277,18 +281,23 @@ cat > $HOME/help <<'EOF'
   update      — обновить ядро
 EOF
 
+# Финальный вывод (без дублирования)
 clear
-
-# Финальный вывод
-LINK=$(mainuser)
 echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
 echo
-echo "Ссылка для подключения:"
-echo "$LINK"
+
+# Генерация и вывод ссылки один раз
+LINK=$(mainuser 2>/dev/null)
+if [[ -n "$LINK" && "$LINK" != *"IP_UNAVAILABLE"* ]]; then
+    echo "Ссылка для подключения:"
+    echo "$LINK"
+    echo
+    echo "QR-код:"
+    echo "$LINK" | qrencode -t ansiutf8
+else
+    echo -e "${RED}⚠️ Не удалось сгенерировать ссылку. Проверьте подключение к интернету.${NC}"
+fi
+
 echo
-echo "QR-код:"
-echo "$LINK" | qrencode -t ansiutf8
-echo
-echo
-echo -e "${RED}cat help"
-echo -e "${YELLOW}💡 Включите Use Remote DNS» в клиенте (Hiddify) и режим VPN!${NC}"
+echo -e "${RED}cat $HOME/help${NC}"
+echo -e "${YELLOW}💡 Включите «Use Remote DNS» в клиенте (Hiddify) и режим VPN.${NC}"
