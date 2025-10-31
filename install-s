@@ -44,12 +44,11 @@ KEY_OUTPUT=$(/usr/local/bin/sing-box generate reality-keypair)
 PRIVATE_KEY=$(echo "$KEY_OUTPUT" | awk '/Private key:/ {print $3}')
 PUB_KEY=$(echo "$KEY_OUTPUT" | awk '/Public key:/ {print $3}')
 
-# Убедимся, что ключи получены
 if [[ -z "$PRIVATE_KEY" || -z "$PUB_KEY" ]]; then
     log "Ошибка: не удалось извлечь ключи"
+    echo "Вывод:"
     echo "$KEY_OUTPUT"
-    exit 1
-fi
+    exit fi
 
 # Сохраняем параметры
 KEYS_FILE="/etc/sing-box/.env"
