@@ -8,7 +8,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Проверка root
 if [[ $EUID -ne 0 ]]; then
    echo -e "${RED}Запустите от root.${NC}"
    exit 1
@@ -36,25 +35,19 @@ create_swap_if_needed() {
 
 create_swap_if_needed
 
-# Обновление системы и установка зависимостей
 echo -e "${GREEN}Обновление системы...${NC}"
 apt update && apt upgrade -y
 apt install -y curl wget gnupg net-tools qrencode jq
 
-# Установка Xray
 echo -e "${GREEN}Установка Xray-core...${NC}"
 bash -c "$(curl -L https://github.com/XTLS/Xray-core/releases/latest/download/install.sh)" @ install
 
-# Получение публичного IP
 IP=$(curl -4 -s icanhazip.com)
-
-# Генерация ключей
 UUID=$(xray uuid)
 REALITY_PRIV_KEY=$(xray x25519 | awk '/Private key/ {print $3}')
 REALITY_PUB_KEY=$(xray x25519 | awk '/Public key/ {print $3}')
 SHORT_ID=$(openssl rand -hex 4)
 
-# Сохранение ключей
 mkdir -p /usr/local/etc/xray
 cat > /usr/local/etc/xray/.keys <<EOF
 uuid: $UUID
@@ -63,7 +56,6 @@ Password: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
 
-# Конфигурация с DoH CZ.NIC
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": {
@@ -137,12 +129,11 @@ cat > /usr/local/etc/xray/config.json <<EOF
 }
 EOF
 
-# Перезапуск службы
 systemctl daemon-reload
 systemctl enable --now xray
 
 # Утилиты
-cat > /usr/local/bin/userlist <<'EOF'
+cat > /usr/local/bin/listuser <<'EOF'
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
 if [[ ${#emails[@]} -eq 0 ]]; then
@@ -154,7 +145,7 @@ for i in "${!emails[@]}"; do
     echo "$((i+1)). ${emails[$i]}"
 done
 EOF
-chmod +x /usr/local/bin/userlist
+chmod +x /usr/local/bin/listuser
 
 cat > /usr/local/bin/mainuser <<EOF
 #!/bin/bash
@@ -244,9 +235,7 @@ echo "Готово."
 EOF
 chmod +x /usr/local/bin/update
 
-# Финальный вывод
 LINK=$(mainuser)
-
 clear
 
 echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
@@ -257,5 +246,5 @@ echo
 echo "QR-код:"
 echo "$LINK" | qrencode -t ansiutf8
 echo
-echo -e "${YELLOW}💡 Включите «Use Remote DNS» в клиенте (Hiddify, Shadowrocket и др.).${NC}"
+echo -e "${YELLOW}💡 Включите «Use Remote DNS» в клиенте (Hiddify и др.).${NC}"
 echo -e "${YELLOW}Проверка утечек: https://dnsleaktest.com${NC}"
