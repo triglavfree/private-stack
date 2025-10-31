@@ -1,374 +1,156 @@
 #!/bin/bash
 
-# sing-box-install — Trojan + REALITY + CZ.NIC DoH
-# Полностью совместим с sing-box ≥ v1.11.0
-
 set -e
 
-log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
-}
+# Цвета
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-# === 1. Обновление системы ===
-log "Обновление системы..."
-apt update && apt upgrade -y
-apt install -y curl jq openssl qrencode ufw fail2ban net-tools
-
-# === 2. UFW ===
-log "Настройка UFW"
-ufw --force reset
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp comment "SSH"
-ufw allow 443/tcp comment "sing-box REALITY (TCP)"
-ufw allow 443/udp comment "sing-box REALITY (UDP)"
-ufw --force enable
-
-# === 3. Установка sing-box ===
-log "Установка sing-box"
-SING_BOX_VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
-ARCH=$(uname -m)
-case $ARCH in
-    x86_64) ARCH_NAME="amd64" ;;
-    aarch64|arm64) ARCH_NAME="arm64" ;;
-    *) log "Архитектура $ARCH не поддерживается"; exit 1 ;;
-esac
-
-curl -L "https://github.com/SagerNet/sing-box/releases/download/${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION#v}-linux-${ARCH_NAME}.tar.gz" | tar xz -C /tmp
-cp "/tmp/sing-box-${SING_BOX_VERSION#v}-linux-${ARCH_NAME}/sing-box" /usr/local/bin/sing-box
-chmod +x /usr/local/bin/sing-box
-
-# === 4. Генерация ключей REALITY ===
-log "Генерация ключей REALITY"
-KEY_OUTPUT=$(/usr/local/bin/sing-box generate reality-keypair)
-PRIVATE_KEY=$(echo "$KEY_OUTPUT" | awk '/PrivateKey:/ {print $2}')
-PUB_KEY=$(echo "$KEY_OUTPUT" | awk '/PublicKey:/ {print $2}')
-
-if [[ -z "$PRIVATE_KEY" || -z "$PUB_KEY" ]]; then
-    log "Ошибка: не удалось извлечь ключи"
-    echo "Вывод:"
-    echo "$KEY_OUTPUT"
-    exit 1
+# Проверка root
+if [[ $EUID -ne 0 ]]; then
+   echo -e "${RED}Этот скрипт должен запускаться от root.${NC}" 
+   exit 1
 fi
 
-SID_VISION=$(openssl rand -hex 4)
-SID_NONVISION=$(openssl rand -hex 4)
-MAIN_PASSWORD=$(openssl rand -base64 32)
-IP_ADDR=$(curl -4 -s --max-time 3 https://icanhazip.com || echo "SERVER_IP")
+# Функция обновления системы и установки net-tools
+update_system() {
+    echo -e "${GREEN}Обновление системы...${NC}"
+    apt update && apt upgrade -y
+    apt install -y net-tools curl wget gnupg
+}
 
-# Сохраняем параметры
-KEYS_FILE="/etc/sing-box/.env"
-mkdir -p /etc/sing-box
-cat > "$KEYS_FILE" <<EOF
-PRIVATE_KEY=$PRIVATE_KEY
-PUBLIC_KEY=$PUB_KEY
-SID_VISION=$SID_VISION
-SID_NONVISION=$SID_NONVISION
-PASSWORD=$MAIN_PASSWORD
-IP_ADDR=$IP_ADDR
-EOF
-chmod 600 "$KEYS_FILE"
+# Функция установки Xray
+install_xray() {
+    echo -e "${GREEN}Установка Xray...${NC}"
+    bash -c "$(curl -L https://github.com/XTLS/Xray-core/releases/latest/download/install.sh)" @ install
+}
 
-# === 5. Генерация конфига (совместимый с ≥ v1.11) ===
-log "Создание конфигурации sing-box"
-CONFIG_FILE="/etc/sing-box/config.json"
+# Функция обновления Xray
+update_xray() {
+    echo -e "${GREEN}Обновление Xray...${NC}"
+    bash -c "$(curl -L https://github.com/XTLS/Xray-core/releases/latest/download/install.sh)" @ install
+}
 
-jq -n \
-  --arg pk "$PRIVATE_KEY" \
-  --arg pubk "$PUB_KEY" \
-  --arg sid_v "$SID_VISION" \
-  --arg sid_nv "$SID_NONVISION" \
-  --arg pwd "$MAIN_PASSWORD" \
-'{
+# Функция генерации конфигурации с DoH от CZ.NIC
+generate_config() {
+    local domain="$1"
+    local uuid="$2"
+    local reality_port="$3"
+
+    echo -e "${GREEN}Генерация конфигурации Xray с DoH от CZ.NIC...${NC}"
+
+    cat > /usr/local/etc/xray/config.json <<EOF
+{
   "log": {
-    "level": "warn",
-    "output": "/var/log/sing-box.log"
+    "loglevel": "warning"
   },
   "dns": {
     "servers": [
       {
-        "tag": "doh-cznich",
         "address": "https://doh.nic.cz/dns-query",
-        "detour": "direct"
-      }
+        "domains": ["geosite:category-ads-all"]
+      },
+      "https://doh.nic.cz/dns-query"
     ],
-    "final": "doh-cznich",
-    "independent_cache": true
+    "tag": "doh-cznic"
   },
   "inbounds": [
     {
-      "type": "trojan",
-      "tag": "reality-vision-in",
-      "listen": "0.0.0.0",
-      "listen_port": 443,
-      "sniff": true,
-      "sniff_override_destination": true,
-      "users": [
-        {
-          "name": "main",
-          "password": $pwd,
-          "flow": "xtls-rprx-vision"
-        }
-      ],
-      "tls": {
-        "enabled": true,
-        "server_name": "icloud.com",
-        "reality": {
-          "enabled": true,
-          "handshake": {
-            "server": "icloud.com",
-            "server_port": 443
-          },
-          "private_key": $pk,
-          "short_id": [$sid_v]
-        }
-      }
-    },
-    {
-      "type": "trojan",
-      "tag": "reality-nonvision-in",
-      "listen": "0.0.0.0",
-      "listen_port": 443,
-      "sniff": true,
-      "sniff_override_destination": true,
-      "users": [
-        {
-          "name": "main",
-          "password": $pwd
-        }
-      ],
-      "tls": {
-        "enabled": true,
-        "server_name": "www.cloudflare.com",
-        "reality": {
-          "enabled": true,
-          "handshake": {
-            "server": "www.cloudflare.com",
-            "server_port": 443
-          },
-          "private_key": $pk,
-          "short_id": [$sid_nv]
+      "port": $reality_port,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "$uuid"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "$domain:443",
+          "xver": 0,
+          "serverNames": ["$domain"],
+          "privateKey": "YOUR_PRIVATE_KEY_PLACEHOLDER",
+          "shortIds": ["YOUR_SHORT_ID_PLACEHOLDER"]
         }
       }
     }
   ],
   "outbounds": [
     {
-      "type": "direct",
-      "tag": "direct"
+      "protocol": "freedom",
+      "settings": {},
+      "tag": "direct",
+      "streamSettings": {
+        "sockopt": {
+          "tcpKeepAliveIdle": 100,
+          "tcpNoDelay": true
+        }
+      },
+      "dnsSettings": {
+        "server": "https://doh.nic.cz/dns-query",
+        "clientIp": "YOUR_VPS_PUBLIC_IP_PLACEHOLDER"
+      }
     },
     {
-      "type": "block",
-      "tag": "block"
+      "protocol": "dns",
+      "tag": "dns-out"
     }
   ],
-  "route": {
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
     "rules": [
       {
-        "protocol": "dns",
-        "action": "dns"
+        "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "port": "53",
+        "outboundTag": "dns-out"
       }
-    ],
-    "final": "direct"
+    ]
   }
-}' > "$CONFIG_FILE"
-
-# Проверка валидности
-jq empty "$CONFIG_FILE" >/dev/null
-
-# === 6. Systemd ===
-log "Настройка systemd"
-useradd --system --user-group --home-dir /etc/sing-box sing-box
-chown -R sing-box:sing-box /etc/sing-box
-chmod 600 "$CONFIG_FILE"
-
-cat > /etc/systemd/system/sing-box.service <<EOF
-[Unit]
-Description=sing-box service
-After=network.target
-
-[Service]
-User=sing-box
-Group=sing-box
-ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
-Restart=on-failure
-RestartSec=5
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
+}
 EOF
 
-systemctl daemon-reload
-systemctl enable --now sing-box
-
-# === 7. Утилиты управления пользователями ===
-cat > /usr/local/bin/userlist <<'EOF'
-#!/bin/bash
-source /etc/sing-box/.env
-config="/etc/sing-box/config.json"
-emails=($(jq -r '.inbounds[].users[].name' "$config" | sort -u))
-if [[ ${#emails[@]} -eq 0 ]]; then
-    echo "Список клиентов пуст"
-    exit 1
-fi
-echo "Список клиентов:"
-for i in "${!emails[@]}"; do
-    echo "$((i+1)). ${emails[$i]}"
-done
-EOF
-chmod +x /usr/local/bin/userlist
-
-cat > /usr/local/bin/mainuser <<'EOF'
-#!/bin/bash
-source /etc/sing-box/.env
-link="trojan://${PASSWORD}@${IP_ADDR}:443?security=reality&sni=icloud.com&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SID_VISION}&type=tcp&flow=xtls-rprx-vision#Vision"
-echo -e "\nСсылка для подключения (Vision):"
-echo "$link"
-echo -e "\nQR-код:"
-echo "$link" | qrencode -t ansiutf8
-EOF
-chmod +x /usr/local/bin/mainuser
-
-cat > /usr/local/bin/newuser <<'EOF'
-#!/bin/bash
-source /etc/sing-box/.env
-read -p "Введите имя пользователя (email): " email
-[[ -z "$email" || "$email" == *" "* ]] && { echo "Некорректное имя"; exit 1; }
-
-config="/etc/sing-box/config.json"
-if jq -e --arg e "$email" '.inbounds[].users[] | select(.name == $e)' "$config" >/dev/null; then
-    echo "Пользователь уже существует"
-    exit 1
-fi
-
-new_pass=$(openssl rand -base64 32)
-tmp=$(mktemp)
-jq --arg name "$email" --arg pass "$new_pass" '
-  .inbounds |= map(.users += [{"name": $name, "password": $pass}])
-' "$config" > "$tmp" && mv "$tmp" "$config"
-
-systemctl reload sing-box
-
-link="trojan://${new_pass}@${IP_ADDR}:443?security=reality&sni=icloud.com&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SID_VISION}&type=tcp&flow=xtls-rprx-vision#$email"
-echo -e "\nСсылка:"
-echo "$link"
-echo -e "\nQR-код:"
-echo "$link" | qrencode -t ansiutf8
-EOF
-chmod +x /usr/local/bin/newuser
-
-cat > /usr/local/bin/rmuser <<'EOF'
-#!/bin/bash
-source /etc/sing-box/.env
-config="/etc/sing-box/config.json"
-emails=($(jq -r '.inbounds[].users[].name' "$config" | sort -u))
-[[ ${#emails[@]} -eq 0 ]] && { echo "Нет клиентов"; exit 1; }
-
-for i in "${!emails[@]}"; do
-    echo "$((i+1)). ${emails[$i]}"
-done
-
-read -p "Номер для удаления: " n
-(( n >= 1 && n <= ${#emails[@]} )) || { echo "Неверный номер"; exit 1; }
-user="${emails[$((n-1))]}"
-
-tmp=$(mktemp)
-jq --arg u "$user" '.inbounds |= map(.users |= map(select(.name != $u)))' "$config" > "$tmp" && mv "$tmp" "$config"
-systemctl reload sing-box
-echo "Удалён: $user"
-EOF
-chmod +x /usr/local/bin/rmuser
-
-cat > /usr/local/bin/sharelink <<'EOF'
-#!/bin/bash
-source /etc/sing-box/.env
-config="/etc/sing-box/config.json"
-emails=($(jq -r '.inbounds[].users[].name' "$config" | sort -u))
-[[ ${#emails[@]} -eq 0 ]] && { echo "Нет клиентов"; exit 1; }
-
-for i in "${!emails[@]}"; do
-    echo "$((i+1)). ${emails[$i]}"
-done
-
-read -p "Выберите: " n
-(( n >= 1 && n <= ${#emails[@]} )) || { echo "Неверный номер"; exit 1; }
-user="${emails[$((n-1))]}"
-pass=$(jq --arg u "$user" -r '.inbounds[].users[] | select(.name == $u) | .password' "$config" | head -1)
-
-link="trojan://${pass}@${IP_ADDR}:443?security=reality&sni=icloud.com&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SID_VISION}&type=tcp&flow=xtls-rprx-vision#$user"
-echo -e "\nСсылка:"
-echo "$link"
-echo -e "\nQR-код:"
-echo "$link" | qrencode -t ansiutf8
-EOF
-chmod +x /usr/local/bin/sharelink
-
-# === 8. Команда обновления sing-box ===
-cat > /usr/local/bin/update <<'EOF'
-#!/bin/bash
-log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+    echo -e "${YELLOW}Не забудьте заменить YOUR_PRIVATE_KEY_PLACEHOLDER и YOUR_SHORT_ID_PLACEHOLDER на реальные значения!${NC}"
+    echo -e "${YELLOW}Также замените YOUR_VPS_PUBLIC_IP_PLACEHOLDER на ваш публичный IP (для EDNS в DoH).${NC}"
 }
 
-log "Проверка последней версии sing-box..."
-CURRENT_VERSION=$(/usr/local/bin/sing-box version 2>/dev/null | head -n1 | awk '{print $2}')
-LATEST_VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
-
-if [[ -z "$CURRENT_VERSION" ]]; then
-    log "Не удалось определить текущую версию"
-    exit 1
-fi
-
-log "Текущая версия: $CURRENT_VERSION"
-log "Последняя версия: $LATEST_VERSION"
-
-if [[ "$CURRENT_VERSION" == "${LATEST_VERSION#v}" ]]; then
-    log "Уже установлена последняя версия"
-    exit 0
-fi
-
-log "Обновление до $LATEST_VERSION..."
-
-ARCH=$(uname -m)
-case $ARCH in
-    x86_64) ARCH_NAME="amd64" ;;
-    aarch64|arm64) ARCH_NAME="arm64" ;;
-    *) log "Архитектура $ARCH не поддерживается"; exit 1 ;;
+# Основной интерфейс
+case "$1" in
+    install)
+        update_system
+        install_xray
+        echo -e "${GREEN}Xray установлен. Теперь настройте конфигурацию вручную или через generate_config.${NC}"
+        ;;
+    update)
+        update_xray
+        systemctl restart xray
+        echo -e "${GREEN}Xray обновлён и перезапущен.${NC}"
+        ;;
+    config)
+        if [ $# -ne 4 ]; then
+            echo -e "${RED}Использование: $0 config <domain> <uuid> <port>${NC}"
+            exit 1
+        fi
+        generate_config "$2" "$3" "$4"
+        systemctl restart xray
+        echo -e "${GREEN}Конфигурация обновлена и Xray перезапущен.${NC}"
+        ;;
+    *)
+        echo -e "${YELLOW}Использование:${NC}"
+        echo "  $0 install      — установить Xray и зависимости"
+        echo "  $0 update       — обновить Xray до последней версии"
+        echo "  $0 config <domain> <uuid> <port> — сгенерировать конфиг с DoH от CZ.NIC"
+        exit 1
+        ;;
 esac
-
-URL="https://github.com/SagerNet/sing-box/releases/download/${LATEST_VERSION}/sing-box-${LATEST_VERSION#v}-linux-${ARCH_NAME}.tar.gz"
-
-if ! curl -Lf "$URL" | tar xz -C /tmp; then
-    log "Ошибка загрузки или распаковки"
-    exit 1
-fi
-
-systemctl stop sing-box
-cp "/tmp/sing-box-${LATEST_VERSION#v}-linux-${ARCH_NAME}/sing-box" /usr/local/bin/sing-box
-chmod +x /usr/local/bin/sing-box
-systemctl start sing-box
-
-log "sing-box обновлён до версии $LATEST_VERSION"
-EOF
-
-chmod +x /usr/local/bin/update
-
-# === 9. Финал ===
-log "sing-box успешно установлен"
-/usr/local/bin/mainuser
-
-cat > "$HOME/help" <<EOF
-Команды:
-  mainuser  - ссылка основного пользователя (Vision)
-  newuser   - создать пользователя
-  rmuser    - удалить пользователя
-  sharelink - получить ссылку по имени
-  userlist  - список пользователей
-  update    - обновить sing-box до последней версии
-
-Конфиг: /etc/sing-box/config.json
-Перезагрузка: systemctl reload sing-box
-EOF
-
-log "Инструкции: $HOME/help"
