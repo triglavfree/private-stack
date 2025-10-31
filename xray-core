@@ -39,6 +39,13 @@ echo -e "${GREEN}Обновление системы...${NC}"
 apt update && apt upgrade -y
 apt install -y curl wget gnupg net-tools qrencode jq
 
+# Установка и настройка фаервола (ufw + fail2ban)
+echo -e "${GREEN}Настройка ufw и fail2ban...${NC}"
+apt install -y ufw fail2ban
+ufw allow 443/tcp
+ufw --force enable
+systemctl enable --now fail2ban
+
 # Установка Xray
 echo -e "${GREEN}Установка Xray-core...${NC}"
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
