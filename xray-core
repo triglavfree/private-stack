@@ -45,7 +45,7 @@ bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release
 IP=$(curl -4 -s icanhazip.com)
 UUID=$(xray uuid)
 
-# Генерируем ключи ОДИН раз и сохраняем вывод
+# Генерируем ключи ОДИН раз
 KEYPAIR=$(xray x25519)
 REALITY_PRIV_KEY=$(echo "$KEYPAIR" | awk '/Private key/ {print $3}')
 REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/Public key/ {print $3}')
