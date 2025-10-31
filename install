@@ -1,387 +1,374 @@
 #!/bin/bash
-# install
-# Private Stack v2.1: Xray (REALITY + Vision) + SearXNG + Vaultwarden
-# Без Docker. Без Let's Encrypt. Без sslip.io. Работает на 1 ГБ RAM, Ubuntu 22.04/24.04
 
-set -euo pipefail
-exec > >(tee -a /var/log/privatestack_install.log) 2>&1
+# sing-box-install — Trojan + REALITY + CZ.NIC DoH
+# Полностью совместим с sing-box ≥ v1.11.0
 
-log() { echo -e "\033[0;32m[+]\033[0m $1"; }
-error() { echo -e "\033[0;31m[-]\033[0m $1"; exit 1; }
+set -e
 
-if [[ "$(id -u)" -ne 0 ]]; then error "Запускайте от root"; fi
-if ! grep -q "Ubuntu" /etc/os-release || ! grep -q "24.04\|22.04" /etc/os-release; then
-    error "Требуется Ubuntu 22.04 или 24.04"
-fi
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+}
 
-# Удалить старый Xray, если есть
-if command -v xray &>/dev/null; then
-    log "Обнаружен старый Xray. Останавливаем и удаляем..."
-    systemctl stop xray || true
-    systemctl disable xray || true
-    rm -f /usr/local/bin/xray
-    rm -rf /usr/local/etc/xray /var/log/xray
-fi
+# === 1. Обновление системы ===
+log "Обновление системы..."
+apt update && apt upgrade -y
+apt install -y curl jq openssl qrencode ufw fail2ban net-tools
 
-log "Установка пакетов..."
-DEBIAN_FRONTEND=noninteractive apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    curl git python3 python3-venv nginx-light ufw fail2ban jq qrencode ssl-cert
-
-# Swap
-if ! swapon -s | grep -q "/swapfile"; then
-    log "Создание swap-файла (2 ГБ)..."
-    fallocate -l 2G /swapfile
-    chmod 600 /swapfile
-    mkswap /swapfile
-    swapon /swapfile
-    echo '/swapfile none swap sw 0 0' >> /etc/fstab
-fi
-
-# UFW + fail2ban
-log "Настройка UFW и fail2ban..."
+# === 2. UFW ===
+log "Настройка UFW"
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp comment "SSH"
-ufw allow 443/tcp comment "Xray REALITY (TCP)"
-ufw allow 443/udp comment "Xray REALITY (UDP, Vision)"
+ufw allow 443/tcp comment "sing-box REALITY (TCP)"
+ufw allow 443/udp comment "sing-box REALITY (UDP)"
 ufw --force enable
-systemctl enable --now fail2ban
 
-# Xray
-log "Установка Xray-core..."
-bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+# === 3. Установка sing-box ===
+log "Установка sing-box"
+SING_BOX_VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
+ARCH=$(uname -m)
+case $ARCH in
+    x86_64) ARCH_NAME="amd64" ;;
+    aarch64|arm64) ARCH_NAME="arm64" ;;
+    *) log "Архитектура $ARCH не поддерживается"; exit 1 ;;
+esac
 
-# REALITY params
-REALITY_UUID=$(xray uuid)
-REALITY_KEYPAIR=($(xray x25519 | grep -v "Public key" | cut -d: -f2 | tr -d ' '))
-REALITY_PRIVATE_KEY=${REALITY_KEYPAIR[0]}
-REALITY_PUBLIC_KEY=${REALITY_KEYPAIR[1]}
-REALITY_SHORT_ID=$(openssl rand -hex 4)
+curl -L "https://github.com/SagerNet/sing-box/releases/download/${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION#v}-linux-${ARCH_NAME}.tar.gz" | tar xz -C /tmp
+cp "/tmp/sing-box-${SING_BOX_VERSION#v}-linux-${ARCH_NAME}/sing-box" /usr/local/bin/sing-box
+chmod +x /usr/local/bin/sing-box
 
-# Xray config (REALITY + Vision через gRPC)
-mkdir -p /usr/local/etc/xray
-cat > /usr/local/etc/xray/config.json <<EOF
-{
-  "log": { "loglevel": "warning" },
+# === 4. Генерация ключей REALITY ===
+log "Генерация ключей REALITY"
+KEY_OUTPUT=$(/usr/local/bin/sing-box generate reality-keypair)
+PRIVATE_KEY=$(echo "$KEY_OUTPUT" | awk '/PrivateKey:/ {print $2}')
+PUB_KEY=$(echo "$KEY_OUTPUT" | awk '/PublicKey:/ {print $2}')
+
+if [[ -z "$PRIVATE_KEY" || -z "$PUB_KEY" ]]; then
+    log "Ошибка: не удалось извлечь ключи"
+    echo "Вывод:"
+    echo "$KEY_OUTPUT"
+    exit 1
+fi
+
+SID_VISION=$(openssl rand -hex 4)
+SID_NONVISION=$(openssl rand -hex 4)
+MAIN_PASSWORD=$(openssl rand -base64 32)
+IP_ADDR=$(curl -4 -s --max-time 3 https://icanhazip.com || echo "SERVER_IP")
+
+# Сохраняем параметры
+KEYS_FILE="/etc/sing-box/.env"
+mkdir -p /etc/sing-box
+cat > "$KEYS_FILE" <<EOF
+PRIVATE_KEY=$PRIVATE_KEY
+PUBLIC_KEY=$PUB_KEY
+SID_VISION=$SID_VISION
+SID_NONVISION=$SID_NONVISION
+PASSWORD=$MAIN_PASSWORD
+IP_ADDR=$IP_ADDR
+EOF
+chmod 600 "$KEYS_FILE"
+
+# === 5. Генерация конфига (совместимый с ≥ v1.11) ===
+log "Создание конфигурации sing-box"
+CONFIG_FILE="/etc/sing-box/config.json"
+
+jq -n \
+  --arg pk "$PRIVATE_KEY" \
+  --arg pubk "$PUB_KEY" \
+  --arg sid_v "$SID_VISION" \
+  --arg sid_nv "$SID_NONVISION" \
+  --arg pwd "$MAIN_PASSWORD" \
+'{
+  "log": {
+    "level": "warn",
+    "output": "/var/log/sing-box.log"
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "doh-cznich",
+        "address": "https://doh.nic.cz/dns-query",
+        "detour": "direct"
+      }
+    ],
+    "final": "doh-cznich",
+    "independent_cache": true
+  },
   "inbounds": [
     {
-      "port": 443,
-      "protocol": "vless",
-      "settings": {
-        "clients": [{ "id": "$REALITY_UUID" }],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "grpc",
-        "security": "reality",
-        "realitySettings": {
-          "show": false,
-          "dest": "icloud.com:443",
-          "xver": 0,
-          "serverNames": ["icloud.com", "www.icloud.com"],
-          "privateKey": "$REALITY_PRIVATE_KEY",
-          "shortIds": ["$REALITY_SHORT_ID"]
-        },
-        "grpcSettings": {
-          "serviceName": "random"
+      "type": "trojan",
+      "tag": "reality-vision-in",
+      "listen": "0.0.0.0",
+      "listen_port": 443,
+      "sniff": true,
+      "sniff_override_destination": true,
+      "users": [
+        {
+          "name": "main",
+          "password": $pwd,
+          "flow": "xtls-rprx-vision"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "icloud.com",
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "icloud.com",
+            "server_port": 443
+          },
+          "private_key": $pk,
+          "short_id": [$sid_v]
+        }
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "reality-nonvision-in",
+      "listen": "0.0.0.0",
+      "listen_port": 443,
+      "sniff": true,
+      "sniff_override_destination": true,
+      "users": [
+        {
+          "name": "main",
+          "password": $pwd
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "www.cloudflare.com",
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "www.cloudflare.com",
+            "server_port": 443
+          },
+          "private_key": $pk,
+          "short_id": [$sid_nv]
         }
       }
     }
   ],
-  "outbounds": [{ "protocol": "freedom" }]
-}
-EOF
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "protocol": "dns",
+        "action": "dns"
+      }
+    ],
+    "final": "direct"
+  }
+}' > "$CONFIG_FILE"
 
-systemctl restart xray
-log "✅ Xray (REALITY + Vision) запущен"
+# Проверка валидности
+jq empty "$CONFIG_FILE" >/dev/null
 
-# SearXNG — ЧИСТАЯ УСТАНОВКА
-log "Установка SearXNG (чистая)..."
-rm -rf /opt/searxng
-git clone https://github.com/searxng/searxng.git /opt/searxng
-cd /opt/searxng || exit 1
+# === 6. Systemd ===
+log "Настройка systemd"
+useradd --system --user-group --home-dir /etc/sing-box sing-box
+chown -R sing-box:sing-box /etc/sing-box
+chmod 600 "$CONFIG_FILE"
 
-# Установка uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-
-# Создание виртуального окружения
-uv venv
-source .venv/bin/activate
-
-# Установка build-зависимостей
-uv pip install pyyaml setuptools wheel msgspec
-
-# Установка SearXNG без изоляции сборки
-uv pip install --no-build-isolation -e .
-
-# Создание директории и загрузка примера конфигурации
-mkdir -p searxng
-curl -sL https://raw.githubusercontent.com/searxng/searxng/master/searxng/settings.yml -o searxng/settings.yml
-
-sed -i 's/json_output:.*/json_output: true/' searxng/settings.yml
-sed -i 's|base_url:.*|base_url: http://127.0.0.1:8888|' searxng/settings.yml
-sed -i 's|port:.*|port: 8888|' searxng/settings.yml
-sed -i 's|bind_address:.*|bind_address: "127.0.0.1"|' searxng/settings.yml
-
-# Только DuckDuckGo и WolframAlpha
-sed -i '/^engines:/,/^[^-]/ { s/^\(-.*\)$/#\1/ }' searxng/settings.yml
-cat >> searxng/settings.yml <<EOF
-
-engines:
-  - name: duckduckgo
-    engine: duckduckgo
-    shortcut: ddg
-  - name: wolframalpha
-    engine: wolframalpha
-    shortcut: wa
-    # app_id: YOUR_WOLFRAM_APP_ID
-EOF
-
-# Создание пользователя и systemd-юнит
-if ! id searxng &>/dev/null; then
-    useradd --system --shell /usr/sbin/nologin --home-dir /opt/searxng searxng
-fi
-chown -R searxng:searxng /opt/searxng
-
-cat > /etc/systemd/system/searx.service <<EOF
+cat > /etc/systemd/system/sing-box.service <<EOF
 [Unit]
-Description=SearXNG meta-search engine
+Description=sing-box service
 After=network.target
 
 [Service]
-User=searxng
-Group=searxng
-WorkingDirectory=/opt/searxng
-ExecStart=/opt/searxng/.venv/bin/searxng
-Environment=SEARXNG_SETTINGS_PATH=/opt/searxng/searxng/settings.yml
-Restart=always
-RestartSec=3
+User=sing-box
+Group=sing-box
+ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now searx
-log "✅ SearXNG запущен на http://127.0.0.1:8888"
+systemctl enable --now sing-box
 
-# Nginx заглушка (только HTTP на порту 80)
-log "Настройка Nginx (только порт 80)..."
-echo "<h1>Secure Private Stack</h1>" > /var/www/html/index.html
-cat > /etc/nginx/sites-available/default <<EOF
-server {
-    listen 80;
-    server_name _;
-    root /var/www/html;
-    index index.html;
-}
-EOF
-
-nginx -t || { echo "❌ Ошибка в конфигурации Nginx"; exit 1; }
-if systemctl is-active --quiet nginx; then
-    systemctl reload nginx
-else
-    systemctl start nginx
-fi
-
-# Vaultwarden
-log "Установка Vaultwarden..."
-DATA_DIR="/var/lib/vaultwarden"
-BIN_PATH="/usr/local/bin/vaultwarden"
-USER="vaultwarden"
-
-if ! id "$USER" &>/dev/null; then
-  useradd --system --shell /usr/sbin/nologin --home-dir "$DATA_DIR" "$USER"
-fi
-
-ARCH=$(uname -m)
-case "$ARCH" in
-  x86_64)   BIN_URL="https://github.com/dani-garcia/vaultwarden/releases/latest/download/vaultwarden-linux-x64" ;;
-  aarch64)  BIN_URL="https://github.com/dani-garcia/vaultwarden/releases/latest/download/vaultwarden-linux-arm64" ;;
-  *)        error "Архитектура $ARCH не поддерживается" ;;
-esac
-
-mkdir -p "$DATA_DIR"
-chown "$USER":"$USER" "$DATA_DIR"
-curl -L "$BIN_URL" -o "$BIN_PATH"
-chmod +x "$BIN_PATH"
-chown root:root "$BIN_PATH"
-
-ADMIN_TOKEN=$(openssl rand -hex 32)
-
-cat > /etc/systemd/system/vaultwarden.service <<EOF
-[Unit]
-Description=Vaultwarden Server
-After=network.target
-
-[Service]
-User=$USER
-Group=$USER
-WorkingDirectory=$DATA_DIR
-ExecStart=$BIN_PATH
-Environment=ROCKET_PORT=8080
-Environment=ROCKET_ADDRESS=127.0.0.1
-Environment=ROCKET_WORKERS=2
-Environment=ADMIN_TOKEN=$ADMIN_TOKEN
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable --now vaultwarden
-log "✅ Vaultwarden запущен на http://127.0.0.1:8080"
-
-# cloudflared — только для Vaultwarden
-log "Установка cloudflared..."
-ARCH=$(uname -m)
-if [[ "$ARCH" == "x86_64" ]]; then
-    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
-elif [[ "$ARCH" == "aarch64" ]]; then
-    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
-else
-    error "Архитектура $ARCH не поддерживается"
-fi
-
-# Остановить, если запущен (защита от повторного запуска)
-systemctl stop cloudflared 2>/dev/null || true
-rm -f /usr/local/bin/cloudflared
-
-curl -L "$DL_URL" -o /usr/local/bin/cloudflared
-chmod +x /usr/local/bin/cloudflared
-
-cat > /etc/systemd/system/cloudflared.service <<EOF
-[Unit]
-Description=Cloudflare Tunnel (Vaultwarden only)
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080
-Restart=always
-RestartSec=10
-User=root
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable --now cloudflared
-sleep 15
-
-VAULTWARDEN_URL=$(journalctl -u cloudflared -n 60 2>/dev/null | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1 || echo "не найден")
-
-# Ссылки и QR
-SERVER_IP=$(curl -4s ifconfig.me)
-
-REALITY_LINK="vless://$REALITY_UUID@$SERVER_IP:443?encryption=none&security=reality&fp=safari&pbk=$REALITY_PUBLIC_KEY&sid=$REALITY_SHORT_ID&sni=icloud.com&type=grpc&serviceName=random&mode=multi&flow=xtls-rprx-vision#PrivateStack-Vision"
-
-# mainuser
-cat > /usr/local/bin/mainuser <<EOF
+# === 7. Утилиты управления пользователями ===
+cat > /usr/local/bin/userlist <<'EOF'
 #!/bin/bash
-IP=\$(curl -4s ifconfig.me)
-UUID=\$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
-PBK=\$(jq -r '.inbounds[0].streamSettings.realitySettings.publicKey // "'$REALITY_PUBLIC_KEY'"' /usr/local/etc/xray/config.json)
-SID=\$(jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0]' /usr/local/etc/xray/config.json)
-LINK="vless://\$UUID@\$IP:443?encryption=none&security=reality&fp=safari&pbk=\$PBK&sid=\$SID&sni=icloud.com&type=grpc&serviceName=random&mode=multi&flow=xtls-rprx-vision#PrivateStack-Vision"
-echo "🔗 Xray REALITY + Vision (требуется Hiddify 2.5+):"
-echo "\$LINK"
-echo
-echo "📱 QR-код:"
-echo "\$LINK" | qrencode -t ansiutf8
+source /etc/sing-box/.env
+config="/etc/sing-box/config.json"
+emails=($(jq -r '.inbounds[].users[].name' "$config" | sort -u))
+if [[ ${#emails[@]} -eq 0 ]]; then
+    echo "Список клиентов пуст"
+    exit 1
+fi
+echo "Список клиентов:"
+for i in "${!emails[@]}"; do
+    echo "$((i+1)). ${emails[$i]}"
+done
+EOF
+chmod +x /usr/local/bin/userlist
+
+cat > /usr/local/bin/mainuser <<'EOF'
+#!/bin/bash
+source /etc/sing-box/.env
+link="trojan://${PASSWORD}@${IP_ADDR}:443?security=reality&sni=icloud.com&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SID_VISION}&type=tcp&flow=xtls-rprx-vision#Vision"
+echo -e "\nСсылка для подключения (Vision):"
+echo "$link"
+echo -e "\nQR-код:"
+echo "$link" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
 
-# vw-url
-cat > /usr/local/bin/vw-url <<EOF
+cat > /usr/local/bin/newuser <<'EOF'
 #!/bin/bash
-URL=\$(journalctl -u cloudflared -n 60 | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1)
-if [[ -z "\$URL" ]]; then
-  echo "⚠️ URL не найден. Перезапуск cloudflared..."
-  systemctl restart cloudflared
-  sleep 10
-  URL=\$(journalctl -u cloudflared -n 60 | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1)
-  if [[ -z "\$URL" ]]; then
-    echo "❌ URL так и не появился. Проверьте journalctl -u cloudflared"
+source /etc/sing-box/.env
+read -p "Введите имя пользователя (email): " email
+[[ -z "$email" || "$email" == *" "* ]] && { echo "Некорректное имя"; exit 1; }
+
+config="/etc/sing-box/config.json"
+if jq -e --arg e "$email" '.inbounds[].users[] | select(.name == $e)' "$config" >/dev/null; then
+    echo "Пользователь уже существует"
     exit 1
-  fi
 fi
-echo "🔗 Vaultwarden: \$URL"
-echo
-echo "📱 QR-код:"
-echo "\$URL" | qrencode -t ansiutf8
-EOF
-chmod +x /usr/local/bin/vw-url
 
-# Обновление
-cat > /usr/local/bin/private-stack-update <<'EOF'
+new_pass=$(openssl rand -base64 32)
+tmp=$(mktemp)
+jq --arg name "$email" --arg pass "$new_pass" '
+  .inbounds |= map(.users += [{"name": $name, "password": $pass}])
+' "$config" > "$tmp" && mv "$tmp" "$config"
+
+systemctl reload sing-box
+
+link="trojan://${new_pass}@${IP_ADDR}:443?security=reality&sni=icloud.com&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SID_VISION}&type=tcp&flow=xtls-rprx-vision#$email"
+echo -e "\nСсылка:"
+echo "$link"
+echo -e "\nQR-код:"
+echo "$link" | qrencode -t ansiutf8
+EOF
+chmod +x /usr/local/bin/newuser
+
+cat > /usr/local/bin/rmuser <<'EOF'
 #!/bin/bash
-set -e
-log() { echo -e "\033[0;32m[+]\033[0m $1"; }
+source /etc/sing-box/.env
+config="/etc/sing-box/config.json"
+emails=($(jq -r '.inbounds[].users[].name' "$config" | sort -u))
+[[ ${#emails[@]} -eq 0 ]] && { echo "Нет клиентов"; exit 1; }
 
-log "Обновление Xray..."
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-logfiles
+for i in "${!emails[@]}"; do
+    echo "$((i+1)). ${emails[$i]}"
+done
 
-log "Обновление SearXNG..."
-cd /opt/searxng || exit 1
-git pull
-export PATH="$HOME/.local/bin:$PATH"
-source .venv/bin/activate
-uv pip install pyyaml setuptools wheel msgspec
-uv pip install --no-build-isolation -e .
-systemctl restart searx
+read -p "Номер для удаления: " n
+(( n >= 1 && n <= ${#emails[@]} )) || { echo "Неверный номер"; exit 1; }
+user="${emails[$((n-1))]}"
 
-log "Обновление Vaultwarden..."
-ARCH=$(uname -m)
-if [[ "$ARCH" == "x86_64" ]]; then
-    DL_URL="https://github.com/dani-garcia/vaultwarden/releases/latest/download/vaultwarden-linux-x64"
-elif [[ "$ARCH" == "aarch64" ]]; then
-    DL_URL="https://github.com/dani-garcia/vaultwarden/releases/latest/download/vaultwarden-linux-arm64"
-fi
-curl -L "$DL_URL" -o /usr/local/bin/vaultwarden
-chmod +x /usr/local/bin/vaultwarden
-systemctl restart vaultwarden
-
-log "Обновление cloudflared..."
-ARCH=$(uname -m)
-if [[ "$ARCH" == "x86_64" ]]; then
-    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
-elif [[ "$ARCH" == "aarch64" ]]; then
-    DL_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
-fi
-curl -L "$DL_URL" -o /usr/local/bin/cloudflared
-chmod +x /usr/local/bin/cloudflared
-systemctl restart cloudflared
-
-log "✅ Все компоненты обновлены!"
+tmp=$(mktemp)
+jq --arg u "$user" '.inbounds |= map(.users |= map(select(.name != $u)))' "$config" > "$tmp" && mv "$tmp" "$config"
+systemctl reload sing-box
+echo "Удалён: $user"
 EOF
-chmod +x /usr/local/bin/private-stack-update
+chmod +x /usr/local/bin/rmuser
 
-# Финал
-systemctl restart xray
+cat > /usr/local/bin/sharelink <<'EOF'
+#!/bin/bash
+source /etc/sing-box/.env
+config="/etc/sing-box/config.json"
+emails=($(jq -r '.inbounds[].users[].name' "$config" | sort -u))
+[[ ${#emails[@]} -eq 0 ]] && { echo "Нет клиентов"; exit 1; }
 
-echo
-echo "🎉 Установка завершена!"
-echo
-echo "🔗 Xray REALITY + Vision (требуется Hiddify 2.5+):"
-echo "$REALITY_LINK"
-echo
-echo "📱 QR-код Xray:"
-echo "$REALITY_LINK" | qrencode -t ansiutf8
-echo
-echo "🔗 Vaultwarden: $VAULTWARDEN_URL"
-echo
-echo "📱 QR-код Vaultwarden:"
-echo "$VAULTWARDEN_URL" | qrencode -t ansiutf8
-echo
-echo "💡 Команды:"
-echo "   - Ссылка Xray: mainuser"
-echo "   - Ссылка Vaultwarden: vw-url"
-echo "   - Обновление: private-stack-update"
-echo "   - SearXNG доступен только через прокси (127.0.0.1:8888)."
+for i in "${!emails[@]}"; do
+    echo "$((i+1)). ${emails[$i]}"
+done
+
+read -p "Выберите: " n
+(( n >= 1 && n <= ${#emails[@]} )) || { echo "Неверный номер"; exit 1; }
+user="${emails[$((n-1))]}"
+pass=$(jq --arg u "$user" -r '.inbounds[].users[] | select(.name == $u) | .password' "$config" | head -1)
+
+link="trojan://${pass}@${IP_ADDR}:443?security=reality&sni=icloud.com&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SID_VISION}&type=tcp&flow=xtls-rprx-vision#$user"
+echo -e "\nСсылка:"
+echo "$link"
+echo -e "\nQR-код:"
+echo "$link" | qrencode -t ansiutf8
+EOF
+chmod +x /usr/local/bin/sharelink
+
+# === 8. Команда обновления sing-box ===
+cat > /usr/local/bin/update <<'EOF'
+#!/bin/bash
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+}
+
+log "Проверка последней версии sing-box..."
+CURRENT_VERSION=$(/usr/local/bin/sing-box version 2>/dev/null | head -n1 | awk '{print $2}')
+LATEST_VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
+
+if [[ -z "$CURRENT_VERSION" ]]; then
+    log "Не удалось определить текущую версию"
+    exit 1
+fi
+
+log "Текущая версия: $CURRENT_VERSION"
+log "Последняя версия: $LATEST_VERSION"
+
+if [[ "$CURRENT_VERSION" == "${LATEST_VERSION#v}" ]]; then
+    log "Уже установлена последняя версия"
+    exit 0
+fi
+
+log "Обновление до $LATEST_VERSION..."
+
+ARCH=$(uname -m)
+case $ARCH in
+    x86_64) ARCH_NAME="amd64" ;;
+    aarch64|arm64) ARCH_NAME="arm64" ;;
+    *) log "Архитектура $ARCH не поддерживается"; exit 1 ;;
+esac
+
+URL="https://github.com/SagerNet/sing-box/releases/download/${LATEST_VERSION}/sing-box-${LATEST_VERSION#v}-linux-${ARCH_NAME}.tar.gz"
+
+if ! curl -Lf "$URL" | tar xz -C /tmp; then
+    log "Ошибка загрузки или распаковки"
+    exit 1
+fi
+
+systemctl stop sing-box
+cp "/tmp/sing-box-${LATEST_VERSION#v}-linux-${ARCH_NAME}/sing-box" /usr/local/bin/sing-box
+chmod +x /usr/local/bin/sing-box
+systemctl start sing-box
+
+log "sing-box обновлён до версии $LATEST_VERSION"
+EOF
+
+chmod +x /usr/local/bin/update
+
+# === 9. Финал ===
+log "sing-box успешно установлен"
+/usr/local/bin/mainuser
+
+cat > "$HOME/help" <<EOF
+Команды:
+  mainuser  - ссылка основного пользователя (Vision)
+  newuser   - создать пользователя
+  rmuser    - удалить пользователя
+  sharelink - получить ссылку по имени
+  userlist  - список пользователей
+  update    - обновить sing-box до последней версии
+
+Конфиг: /etc/sing-box/config.json
+Перезагрузка: systemctl reload sing-box
+EOF
+
+log "Инструкции: $HOME/help"
