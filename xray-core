@@ -270,18 +270,24 @@ echo
 echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
 echo
 
-# Генерация и вывод ссылки
-LINK=$(mainuser 2>/dev/null)
-if [[ -n "$LINK" && "$LINK" != *"IP_UNAVAILABLE"* ]]; then
+# Генерация ссылки для основного пользователя "main"
+MAIN_UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
+pbk=$(awk -F': ' '/Password/ {print $2}' /usr/local/etc/xray/.keys)
+sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/xray/.keys)
+sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
+ip=$(curl -4 -s icanhazip.com || curl -6 -s icanhazip.com)
+
+if [[ -z "$ip" ]]; then
+    echo -e "${RED}⚠️ Не удалось определить IP для ссылки.${NC}"
+else
+    LINK="vless://$MAIN_UUID@$ip:443?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
     echo
     echo "Ссылка для подключения:"
     echo
     echo "$LINK"
     echo
     echo "QR-код:"
-    echo "$LINK" | qrencode -t ansiutf8
-else
-    echo -e "${RED}⚠️ Не удалось сгенерировать ссылку. Проверьте подключение к интернету.${NC}"
+    echo "$LINK" | qrencode -t ansiutf8 -s 2
 fi
 
 echo
