@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# sing-box-install — Trojan + REALITY, два inbound на 443 порту
+# sing-box-install — Trojan + REALITY + CZ.NIC DoH
 # Полная замена xray-install для sing-box
 
 set -e
@@ -27,10 +27,10 @@ ufw --force enable
 # === 3. Установка sing-box ===
 log "Установка sing-box"
 SING_BOX_VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
-ARCH=$(dpkg --print-architecture)
+ARCH=$(uname -m)
 case $ARCH in
-    amd64) ARCH_NAME="amd64" ;;
-    arm64) ARCH_NAME="arm64" ;;
+    x86_64) ARCH_NAME="amd64" ;;
+    aarch64|arm64) ARCH_NAME="arm64" ;;
     *) log "Архитектура $ARCH не поддерживается"; exit 1 ;;
 esac
 
@@ -38,17 +38,23 @@ curl -L "https://github.com/SagerNet/sing-box/releases/download/${SING_BOX_VERSI
 cp "/tmp/sing-box-${SING_BOX_VERSION#v}-linux-${ARCH_NAME}/sing-box" /usr/local/bin/sing-box
 chmod +x /usr/local/bin/sing-box
 
-# Генерация ключей для sing-box
+# === 4. Генерация ключей REALITY (с учётом PrivateKey: формата) ===
 log "Генерация ключей REALITY"
 KEY_OUTPUT=$(/usr/local/bin/sing-box generate reality-keypair)
-PRIVATE_KEY=$(echo "$KEY_OUTPUT" | awk '/Private key:/ {print $3}')
-PUB_KEY=$(echo "$KEY_OUTPUT" | awk '/Public key:/ {print $3}')
+PRIVATE_KEY=$(echo "$KEY_OUTPUT" | awk '/PrivateKey:/ {print $2}')
+PUB_KEY=$(echo "$KEY_OUTPUT" | awk '/PublicKey:/ {print $2}')
 
 if [[ -z "$PRIVATE_KEY" || -z "$PUB_KEY" ]]; then
     log "Ошибка: не удалось извлечь ключи"
-    echo "Вывод:"
+    echo "Вывод генерации:"
     echo "$KEY_OUTPUT"
-    exit fi
+    exit 1
+fi
+
+SID_VISION=$(openssl rand -hex 4)
+SID_NONVISION=$(openssl rand -hex 4)
+MAIN_PASSWORD=$(openssl rand -base64 32)
+IP_ADDR=$(curl -4 -s --max-time 3 https://icanhazip.com || echo "SERVER_IP")
 
 # Сохраняем параметры
 KEYS_FILE="/etc/sing-box/.env"
@@ -63,7 +69,7 @@ IP_ADDR=$IP_ADDR
 EOF
 chmod 600 "$KEYS_FILE"
 
-# === 5. Генерация конфига через jq (100% валидный JSON) ===
+# === 5. Генерация конфига через jq (с CZ.NIC DoH) ===
 log "Создание конфигурации sing-box"
 CONFIG_FILE="/etc/sing-box/config.json"
 
@@ -77,6 +83,17 @@ jq -n \
   "log": {
     "level": "warn",
     "output": "/var/log/sing-box.log"
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "doh-cznich",
+        "address": "https://doh.nic.cz/dns-query",
+        "detour": "direct"
+      }
+    ],
+    "final": "doh-cznich",
+    "independent_cache": true
   },
   "inbounds": [
     {
@@ -121,12 +138,18 @@ jq -n \
   ],
   "outbounds": [
     {"type": "direct", "tag": "direct"},
+    {"type": "dns", "tag": "dns-out"},
     {"type": "block", "tag": "block"}
   ],
-  "route": {"final": "direct"}
+  "route": {
+    "rules": [
+      {"protocol": "dns", "outbound": "dns-out"}
+    ],
+    "final": "direct"
+  }
 }' > "$CONFIG_FILE"
 
-# Проверка (на всякий случай)
+# Проверка валидности
 jq empty "$CONFIG_FILE" >/dev/null
 
 # === 6. Systemd ===
