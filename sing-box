@@ -273,9 +273,7 @@ cat > $HOME/help <<'EOF'
 EOF
 
 LINK=$(mainuser)
-
 clear
-
 echo -e "${GREEN}✅ Установка sing-box (REALITY + Vision) завершена!${NC}"
 echo
 echo "Ссылка для подключения:"
