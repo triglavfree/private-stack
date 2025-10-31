@@ -165,21 +165,27 @@ done
 EOF
 chmod +x /usr/local/bin/listuser
 
-cat > /usr/local/bin/mainuser <<EOF
+cat > /usr/local/bin/mainuser <<'EOF'
 #!/bin/bash
-protocol=\$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
-port=\$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
-uuid=\$(awk -F': ' '/uuid/ {print \$2}' /usr/local/etc/xray/.keys)
-pbk=\$(awk -F': ' '/Password/ {print \$2}' /usr/local/etc/xray/.keys)
-sid=\$(awk -F': ' '/shortsid/ {print \$2}' /usr/local/etc/xray/.keys)
-sni=\$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
-ip=\$(curl -4 -s icanhazip.com)
-link="\$protocol://\$uuid@\$ip:\$port?security=reality&sni=\$sni&fp=firefox&pbk=\$pbk&sid=\$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-\$ip"
-echo "\$link"
+protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
+port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
+uuid=$(awk -F': ' '/uuid/ {print $2}' /usr/local/etc/xray/.keys)
+pbk=$(awk -F': ' '/Password/ {print $2}' /usr/local/etc/xray/.keys)
+sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/xray/.keys)
+sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
+ip=$(timeout 3 curl -4 -s icanhazip.com)
+link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-$ip"
+echo ""
+echo "Ссылка для подключения:"
+echo "$link"
+echo ""
+echo "QR-код:"
+echo "$link" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
 
-cat > /usr/local/bin/newuser <<'EOF'
+# === ИЗМЕНЕНО: newuser → adduser ===
+cat > /usr/local/bin/adduser <<'EOF'
 #!/bin/bash
 read -p "Email: " email
 if [[ -z "$email" || "$email" == *" "* ]]; then echo "Неверный email"; exit 1; fi
@@ -203,7 +209,7 @@ echo
 echo "QR:"
 echo "$link" | qrencode -t ansiutf8
 EOF
-chmod +x /usr/local/bin/newuser
+chmod +x /usr/local/bin/adduser
 
 cat > /usr/local/bin/rmuser <<'EOF'
 #!/bin/bash
@@ -253,12 +259,12 @@ echo "Готово."
 EOF
 chmod +x /usr/local/bin/update
 
-# Помощь
+# Помощь (обновлено: newuser → adduser)
 cat > $HOME/help <<'EOF'
 Доступные команды:
   mainuser    — показать ссылку и QR основного пользователя
   listuser    — список всех клиентов
-  newuser     — создать нового пользователя
+  adduser     — создать нового пользователя
   rmuser      — удалить пользователя
   sharelink   — получить ссылку по номеру
   update      — обновить ядро
