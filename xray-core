@@ -272,7 +272,9 @@ EOF
 
 # Финальный вывод
 LINK=$(mainuser)
-# clear  # закомментировано для отладки
+
+clear
+
 echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
 echo
 echo "Ссылка для подключения:"
@@ -281,7 +283,5 @@ echo
 echo "QR-код:"
 echo "$LINK" | qrencode -t ansiutf8
 echo
-echo "Доступные команды:"
-echo "cat help"
-echo -e "${YELLOW}💡 Включите «Use Remote DNS» в клиенте (Hiddify и др.).${NC}"
-echo -e "${YELLOW}Проверка утечек: https://dnsleaktest.com${NC}"
+echo -e "${RED}cat help"
+echo -e "${YELLOW}💡 Включите «режим VPN» в клиенте (Hiddify и др.).${NC}"
