@@ -60,11 +60,18 @@ IP_ADDR=$IP_ADDR
 EOF
 chmod 600 "$KEYS_FILE"
 
-# === 5. Генерация конфига через шаблон ===
+# === 5. Генерация конфига через jq (безопасно) ===
 log "Создание конфигурации sing-box"
 
-cat > /tmp/sing-box-config.tmpl <<'EOF'
-{
+CONFIG_FILE="/etc/sing-box/config.json"
+
+# Создаём конфиг чисто через jq — никаких шаблонов
+jq -n --arg pk "$PRIVATE_KEY" \
+       --arg pubk "$PUB_KEY" \
+       --arg sid_v "$SID_VISION" \
+       --arg sid_nv "$SID_NONVISION" \
+       --arg pwd "$MAIN_PASSWORD" \
+'{
   "log": {
     "level": "warn",
     "output": "/var/log/sing-box.log"
@@ -77,31 +84,18 @@ cat > /tmp/sing-box-config.tmpl <<'EOF'
       "listen_port": 443,
       "sniff": true,
       "sniff_override_destination": true,
-      "users": [
-        {
-          "name": "main",
-          "password": "${PASSWORD}"
-        }
-      ],
+      "users": [{"name": "main", "password": $pwd}],
       "tls": {
         "enabled": true,
         "server_name": "icloud.com",
         "reality": {
           "enabled": true,
-          "handshake": {
-            "server": "icloud.com",
-            "server_port": 443
-          },
-          "private_key": "${PRIVATE_KEY}",
-          "short_id": ["${SID_VISION}"]
+          "handshake": {"server": "icloud.com", "server_port": 443},
+          "private_key": $pk,
+          "short_id": [$sid_v]
         }
       },
-      "transport": {
-        "type": "tcp",
-        "tcp": {
-          "flow": "xtls-rprx-vision"
-        }
-      }
+      "transport": {"type": "tcp", "tcp": {"flow": "xtls-rprx-vision"}}
     },
     {
       "type": "trojan",
@@ -110,46 +104,28 @@ cat > /tmp/sing-box-config.tmpl <<'EOF'
       "listen_port": 443,
       "sniff": true,
       "sniff_override_destination": true,
-      "users": [
-        {
-          "name": "main",
-          "password": "${PASSWORD}"
-        }
-      ],
+      "users": [{"name": "main", "password": $pwd}],
       "tls": {
         "enabled": true,
         "server_name": "mail.yourdomain.com",
         "reality": {
           "enabled": true,
-          "handshake": {
-            "server": "mail.yourdomain.com",
-            "server_port": 443
-          },
-          "private_key": "${PRIVATE_KEY}",
-          "short_id": ["${SID_NONVISION}"]
+          "handshake": {"server": "mail.yourdomain.com", "server_port": 443},
+          "private_key": $pk,
+          "short_id": [$sid_nv]
         }
       }
     }
   ],
   "outbounds": [
-    {
-      "type": "direct",
-      "tag": "direct"
-    },
-    {
-      "type": "block",
-      "tag": "block"
-    }
+    {"type": "direct", "tag": "direct"},
+    {"type": "block", "tag": "block"}
   ],
-  "route": {
-    "final": "direct"
-  }
-}
-EOF
+  "route": {"final": "direct"}
+}' > "$CONFIG_FILE"
 
-# Подстановка переменных
-export PRIVATE_KEY PUBLIC_KEY SID_VISION SID_NONVISION PASSWORD
-envsubst < /tmp/sing-box-config.tmpl > /etc/sing-box/config.json
+# Проверка (на всякий случай)
+jq empty "$CONFIG_FILE" >/dev/null
 
 # Проверка JSON
 if ! jq empty /etc/sing-box/config.json >/dev/null 2>&1; then
