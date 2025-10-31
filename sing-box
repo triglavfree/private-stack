@@ -1,7 +1,5 @@
 #!/bin/bash
-
 set -e
-
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -30,12 +28,11 @@ create_swap_if_needed() {
         fi
     fi
 }
-
 create_swap_if_needed
 
 echo -e "${GREEN}Обновление системы...${NC}"
 apt update && apt upgrade -y
-apt install -y curl wget gnupg net-tools qrencode jq
+apt install -y curl wget gnupg net-tools qrencode jq uuid-runtime
 
 # Установка sing-box
 echo -e "${GREEN}Установка sing-box...${NC}"
@@ -46,43 +43,50 @@ case "$ARCH" in
   arm64) SUFFIX="linux-arm64" ;;
   *) echo -e "${RED}Архитектура $ARCH не поддерживается.${NC}"; exit 1 ;;
 esac
-
 URL="https://github.com/SagerNet/sing-box/releases/download/${LATEST}/sing-box-${LATEST#v}-${SUFFIX}.tar.gz"
 curl -L "$URL" | tar xz -C /tmp
 mv "/tmp/sing-box-${LATEST#v}-${SUFFIX}/sing-box" /usr/local/bin/sing-box
 rm -rf "/tmp/sing-box-${LATEST#v}-${SUFFIX}"
 chmod +x /usr/local/bin/sing-box
 
+# Проверка установки
+if ! command -v sing-box &> /dev/null; then
+    echo -e "${RED}Ошибка: sing-box не установлен.${NC}"
+    exit 1
+fi
+
 # systemd
 cat > /etc/systemd/system/sing-box.service <<'EOF'
 [Unit]
 Description=sing-box service
 After=network.target
-
 [Service]
 ExecStart=/usr/local/bin/sing-box run -c /usr/local/etc/sing-box/config.json
 Restart=on-failure
 RestartSec=5
 User=root
-
 [Install]
 WantedBy=multi-user.target
 EOF
 
 IP=$(curl -4 -s icanhazip.com)
 UUID=$(uuidgen)
-REALITY_PRIV_KEY=$(sing-box x25519 | awk '/Private key/ {print $3}')
-REALITY_PUB_KEY=$(sing-box x25519 | awk '/Public key/ {print $3}')
+
+# Генерация ключей ОДИН раз
+KEYPAIR=$(sing-box x25519)
+REALITY_PRIV_KEY=$(echo "$KEYPAIR" | awk '/^private key:/ {print $3}')
+REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^public key:/ {print $3}')
 SHORT_ID=$(openssl rand -hex 4)
 
 mkdir -p /usr/local/etc/sing-box
 cat > /usr/local/etc/sing-box/.keys <<EOF
 uuid: $UUID
-Private key: $REALITY_PRIV_KEY
-Password: $REALITY_PUB_KEY
+private key: $REALITY_PRIV_KEY
+public key: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
 
+# Конфигурация с DoH Cloudflare
 cat > /usr/local/etc/sing-box/config.json <<EOF
 {
   "log": {
@@ -91,8 +95,8 @@ cat > /usr/local/etc/sing-box/config.json <<EOF
   "dns": {
     "servers": [
       {
-        "tag": "doh-cznic",
-        "address": "https://doh.nic.cz/dns-query"
+        "tag": "cloudflare",
+        "address": "https://1.1.1.1/dns-query"
       }
     ]
   },
@@ -125,8 +129,7 @@ cat > /usr/local/etc/sing-box/config.json <<EOF
     {
       "type": "direct",
       "tag": "direct",
-      "domain_strategy": "prefer_ipv4",
-      "detour": "dns-out"
+      "domain_strategy": "prefer_ipv4"
     },
     {
       "type": "dns",
@@ -163,25 +166,35 @@ done
 EOF
 chmod +x /usr/local/bin/listuser
 
-cat > /usr/local/bin/mainuser <<EOF
+cat > /usr/local/bin/mainuser <<'EOF'
 #!/bin/bash
-uuid=\$(awk -F': ' '/uuid/ {print \$2}' /usr/local/etc/sing-box/.keys)
-pbk=\$(awk -F': ' '/Password/ {print \$2}' /usr/local/etc/sing-box/.keys)
-sid=\$(awk -F': ' '/shortsid/ {print \$2}' /usr/local/etc/sing-box/.keys)
-ip=\$(curl -4 -s icanhazip.com)
-link="vless://\$uuid@\$ip:443?security=reality&sni=icloud.com&fp=firefox&pbk=\$pbk&sid=\$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-\$ip"
-echo "\$link"
+uuid=$(awk -F': ' '/uuid/ {print $2}' /usr/local/etc/sing-box/.keys)
+pbk=$(awk -F': ' '/public key/ {print $2}' /usr/local/etc/sing-box/.keys)
+sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/sing-box/.keys)
+ip=$(timeout 3 curl -4 -s icanhazip.com)
+link="vless://$uuid@$ip:443?security=reality&sni=icloud.com&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-$ip"
+echo ""
+echo "Ссылка для подключения:"
+echo "$link"
+echo ""
+echo "QR-код:"
+echo "$link" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
 
-cat > /usr/local/bin/newuser <<'EOF'
+# === ИЗМЕНЕНО: newuser → adduser ===
+cat > /usr/local/bin/adduser <<'EOF'
 #!/bin/bash
 read -p "Email (для метки): " email
 if [[ -z "$email" ]]; then echo "Email не может быть пустым"; exit 1; fi
+if jq -e --arg e "$email" '.inbounds[0].users[] | select(.email == $e)' /usr/local/etc/sing-box/config.json >/dev/null 2>&1; then
+    echo "Уже существует"
+    exit 1
+fi
 uuid=$(uuidgen)
-jq --arg u "$uuid" '.inbounds[0].users += [{"uuid": $u, "flow": "xtls-rprx-vision"}]' /usr/local/etc/sing-box/config.json > /tmp/x.json && mv /tmp/x.json /usr/local/etc/sing-box/config.json
+jq --arg e "$email" --arg u "$uuid" '.inbounds[0].users += [{"uuid": $u, "flow": "xtls-rprx-vision", "email": $e}]' /usr/local/etc/sing-box/config.json > /tmp/x.json && mv /tmp/x.json /usr/local/etc/sing-box/config.json
 systemctl restart sing-box
-pbk=$(awk -F': ' '/Password/ {print $2}' /usr/local/etc/sing-box/.keys)
+pbk=$(awk -F': ' '/public key/ {print $2}' /usr/local/etc/sing-box/.keys)
 sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/sing-box/.keys)
 ip=$(curl -4 -s icanhazip.com)
 link="vless://$uuid@$ip:443?security=reality&sni=icloud.com&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
@@ -192,16 +205,15 @@ echo
 echo "QR:"
 echo "$link" | qrencode -t ansiutf8
 EOF
-chmod +x /usr/local/bin/newuser
+chmod +x /usr/local/bin/adduser
 
 cat > /usr/local/bin/rmuser <<'EOF'
 #!/bin/bash
-uuids=($(jq -r '.inbounds[0].users[].uuid' "/usr/local/etc/sing-box/config.json"))
-if [[ ${#uuids[@]} -eq 0 ]]; then echo "Нет клиентов"; exit 1; fi
-for i in "${!uuids[@]}"; do echo "$((i+1)). ${uuids[$i]}"; done
+emails=($(jq -r '.inbounds[0].users[].email // "без email"' "/usr/local/etc/sing-box/config.json"))
+if [[ ${#emails[@]} -eq 0 ]]; then echo "Нет клиентов"; exit 1; fi
+for i in "${!emails[@]}"; do echo "$((i+1)). ${emails[$i]}"; done
 read -p "Номер для удаления: " n
-if ! [[ "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#uuids[@]} )); then echo "Ошибка"; exit 1; fi
-# Удаляем по индексу
+if ! [[ "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#emails[@]} )); then echo "Ошибка"; exit 1; fi
 jq --argjson idx $((n-1)) '(.inbounds[0].users) |= del(.[\$idx])' /usr/local/etc/sing-box/config.json > /tmp/x.json && mv /tmp/x.json /usr/local/etc/sing-box/config.json
 systemctl restart sing-box
 echo "Клиент удалён."
@@ -210,13 +222,14 @@ chmod +x /usr/local/bin/rmuser
 
 cat > /usr/local/bin/sharelink <<'EOF'
 #!/bin/bash
-uuids=($(jq -r '.inbounds[0].users[].uuid' "/usr/local/etc/sing-box/config.json"))
-if [[ ${#uuids[@]} -eq 0 ]]; then echo "Нет клиентов"; exit 1; fi
-for i in "${!uuids[@]}"; do echo "$((i+1)). ${uuids[$i]}"; done
+emails=($(jq -r '.inbounds[0].users[].email // "без email"' "/usr/local/etc/sing-box/config.json"))
+if [[ ${#emails[@]} -eq 0 ]]; then echo "Нет клиентов"; exit 1; fi
+for i in "${!emails[@]}"; do echo "$((i+1)). ${emails[$i]}"; done
 read -p "Выбор: " n
-if ! [[ "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#uuids[@]} )); then echo "Ошибка"; exit 1; fi
-uuid="${uuids[$((n-1))]}"
-pbk=$(awk -F': ' '/Password/ {print $2}' /usr/local/etc/sing-box/.keys)
+if ! [[ "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#emails[@]} )); then echo "Ошибка"; exit 1; fi
+index=$((n-1))
+uuid=$(jq -r ".inbounds[0].users[$index].uuid" /usr/local/etc/sing-box/config.json)
+pbk=$(awk -F': ' '/public key/ {print $2}' /usr/local/etc/sing-box/.keys)
 sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/sing-box/.keys)
 ip=$(curl -4 -s icanhazip.com)
 link="vless://$uuid@$ip:443?security=reality&sni=icloud.com&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#user-$n"
@@ -253,13 +266,14 @@ cat > $HOME/help <<'EOF'
 Доступные команды:
   mainuser    — показать ссылку и QR основного пользователя
   listuser    — список всех клиентов
-  newuser     — создать нового пользователя
+  adduser     — создать нового пользователя
   rmuser      — удалить пользователя
   sharelink   — получить ссылку по номеру
   update      — обновить ядро
 EOF
 
 LINK=$(mainuser)
+
 clear
 
 echo -e "${GREEN}✅ Установка sing-box (REALITY + Vision) завершена!${NC}"
@@ -270,7 +284,5 @@ echo
 echo "QR-код:"
 echo "$LINK" | qrencode -t ansiutf8
 echo
-echo "Доступные команды"
-echo "cat help"
-echo -e "${YELLOW}💡 Включите «Use Remote DNS» в клиенте (Hiddify и др.).${NC}"
-echo -e "${YELLOW}Проверка утечек: https://dnsleaktest.com${NC}"
+echo -e "${RED}cat help"
+echo -e "${YELLOW}💡 Включите «режим VPN» и «Use Remote DNS» в клиенте (Hiddify и др.).${NC}"
