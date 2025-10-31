@@ -29,7 +29,7 @@ curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-b
 ```
 Скрипт автоматически:
 - Установит и настроит Core (REALITY + Vision)
-- Настроит ufw + fail2ban
+- Настроит ufw + fail2ban установить net-tools
 - Не пишет логи — только живой вывод в консоль
 - Выведет ссылку REALITY + Vision и QR-код
 
