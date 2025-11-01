@@ -18,13 +18,13 @@
 
 ##  Установка
 Выберите только один из двух скриптов:
-### [xray-core](https://github.com/XTLS/Xray-core):
+### [xray-core](https://github.com/XTLS/Xray-core) — [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/)
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/xray-core | bash
 ```
 >⚠️ Не устанавливайте оба на один сервер — они конфликтуют за порт 443.
 
-### [sing-box](https://github.com/SagerNet/sing-box):
+### [sing-box](https://github.com/SagerNet/sing-box) — [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-box | bash
 ```
@@ -65,9 +65,9 @@ openssh       # Открывает ssh доступ по 22 порту введ�
 cat help      # список доступных команд
 ```
 ##  Приватность и безопасность
-- Все DNS-запросы идут через [Cloudflare](https://1.1.1.1/dns-query)
+- Все DNS-запросы идут через DoH [Cloudflare](https://1.1.1.1/dns-query) и не сохраняются
 - Проверено на [dnsleaktest](https://www.dnsleaktest.com/) — **утечек нет**
-- REALITY использует **криптостойкие ключи X25519** и случайный `shortId`
+- **REALITY** использует **криптостойкие ключи X25519** и случайный `shortId`, всё зашифровано через **REALITY + TLS**
 - Трафик **маскируется под HTTPS-соединение к** `www.cloudflare.com` **(obfuscation)**
 - Сервер **не требует домена или сертификатов**
 > 🔐 Порт 22 (SSH) закрыт по умолчанию ufw.
