@@ -241,7 +241,6 @@ echo "Готово."
 EOF
 chmod +x /usr/local/bin/update
 
-# === НОВАЯ КОМАНДА: openssh ===
 cat > /usr/local/bin/openssh <<'EOF'
 #!/bin/bash
 RED='\033[0;31m'
@@ -328,10 +327,9 @@ else
     echo "$LINK" | qrencode -t ansiutf8 -s 2
 fi
 echo
-echo -e "${GREEN} Введите cat help для получения списка доступных команд${NC}"
+echo -e "${YELLOW}⚠️ Для получения списка доступных команд X-Ray, выполните:${NC}"
+echo -e "${GREEN}       cat help${NC}"
 
-# Напоминание о SSH
-echo
 echo -e "${YELLOW}🔒 Порт 22 (SSH) закрыт фаерволом. Чтобы получить доступ, выполните:${NC}"
 echo -e "${GREEN}       openssh${NC}"
 echo -e "${YELLOW}   и укажите ваш внешний IP (например, с myip.ru).${NC}"
