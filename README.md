@@ -9,12 +9,11 @@
 -  Не пишет логи — только живой вывод в консоль
 
 ##  Установка
-Выберите только один из двух скриптов:
 ###  [xray-core](https://github.com/XTLS/Xray-core)
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/xray-core | bash
 ```
->⚠️ Не устанавливайте оба на один сервер — они конфликтуют за порт 443.
+>⚠️ Не устанавливайте оба на один сервер — они конфликтуют за порт 443. Выберите только один из двух скриптов:
 
 ###  [sing-box](https://github.com/SagerNet/sing-box)
 ```bash
