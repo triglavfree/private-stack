@@ -4,12 +4,10 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
-
 if [[ $EUID -ne 0 ]]; then
    echo -e "${RED}Запустите от root.${NC}"
    exit 1
 fi
-
 create_swap_if_needed() {
     TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
     TOTAL_MEM_GB=$((TOTAL_MEM_KB / 1024 / 1024))
@@ -29,11 +27,15 @@ create_swap_if_needed() {
     fi
 }
 create_swap_if_needed
-
 echo -e "${GREEN}Обновление системы...${NC}"
 apt update && apt upgrade -y
 apt install -y curl wget gnupg net-tools qrencode jq uuid-runtime
-
+# === ДОБАВЛЕНО: ufw + fail2ban ===
+echo -e "${GREEN}Настройка ufw и fail2ban...${NC}"
+apt install -y ufw fail2ban
+ufw allow 443/tcp
+ufw --force enable
+systemctl enable --now fail2ban
 # Установка sing-box
 echo -e "${GREEN}Установка sing-box...${NC}"
 LATEST=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r ".tag_name")
@@ -48,13 +50,11 @@ curl -L "$URL" | tar xz -C /tmp
 mv "/tmp/sing-box-${LATEST#v}-${SUFFIX}/sing-box" /usr/local/bin/sing-box
 rm -rf "/tmp/sing-box-${LATEST#v}-${SUFFIX}"
 chmod +x /usr/local/bin/sing-box
-
 # Проверка установки
 if ! command -v sing-box &> /dev/null; then
     echo -e "${RED}Ошибка: sing-box не установлен.${NC}"
     exit 1
 fi
-
 # systemd
 cat > /etc/systemd/system/sing-box.service <<'EOF'
 [Unit]
@@ -68,16 +68,13 @@ User=root
 [Install]
 WantedBy=multi-user.target
 EOF
-
 IP=$(curl -4 -s icanhazip.com)
 UUID=$(uuidgen)
-
 # Генерация ключей ОДИН раз
 KEYPAIR=$(sing-box x25519)
 REALITY_PRIV_KEY=$(echo "$KEYPAIR" | awk '/^private key:/ {print $3}')
 REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^public key:/ {print $3}')
 SHORT_ID=$(openssl rand -hex 4)
-
 mkdir -p /usr/local/etc/sing-box
 cat > /usr/local/etc/sing-box/.keys <<EOF
 uuid: $UUID
@@ -85,7 +82,6 @@ private key: $REALITY_PRIV_KEY
 public key: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
-
 # Конфигурация с DoH Cloudflare
 cat > /usr/local/etc/sing-box/config.json <<EOF
 {
@@ -147,10 +143,8 @@ cat > /usr/local/etc/sing-box/config.json <<EOF
   }
 }
 EOF
-
 systemctl daemon-reload
 systemctl enable --now sing-box
-
 # Утилиты
 cat > /usr/local/bin/listuser <<'EOF'
 #!/bin/bash
@@ -165,7 +159,6 @@ for i in "${!uuids[@]}"; do
 done
 EOF
 chmod +x /usr/local/bin/listuser
-
 cat > /usr/local/bin/mainuser <<'EOF'
 #!/bin/bash
 uuid=$(awk -F': ' '/uuid/ {print $2}' /usr/local/etc/sing-box/.keys)
@@ -181,8 +174,6 @@ echo "QR-код:"
 echo "$link" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
-
-# === ИЗМЕНЕНО: newuser → adduser ===
 cat > /usr/local/bin/adduser <<'EOF'
 #!/bin/bash
 read -p "Email (для метки): " email
@@ -206,7 +197,6 @@ echo "QR:"
 echo "$link" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/adduser
-
 cat > /usr/local/bin/rmuser <<'EOF'
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].users[].email // "без email"' "/usr/local/etc/sing-box/config.json"))
@@ -219,7 +209,6 @@ systemctl restart sing-box
 echo "Клиент удалён."
 EOF
 chmod +x /usr/local/bin/rmuser
-
 cat > /usr/local/bin/sharelink <<'EOF'
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].users[].email // "без email"' "/usr/local/etc/sing-box/config.json"))
@@ -241,7 +230,6 @@ echo "QR:"
 echo "$link" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/sharelink
-
 cat > /usr/local/bin/update <<'EOF'
 #!/bin/bash
 echo "Обновление sing-box..."
@@ -262,6 +250,53 @@ echo "Готово."
 EOF
 chmod +x /usr/local/bin/update
 
+# === НОВАЯ КОМАНДА: openssh (копия из xray-core) ===
+cat > /usr/local/bin/openssh <<'EOF'
+#!/bin/bash
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+echo -e "${YELLOW}🔒 Порт 22 закрыт по умолчанию для безопасности.${NC}"
+echo
+echo -e "${YELLOW}⚠️  ВАЖНО: нужно указать именно ваш ВНЕШНИЙ (публичный) IPv4-адрес!${NC}"
+echo -e "   Это НЕ адрес вида 192.168.x.x, 10.x.x.x или IP вашего VPS."
+echo
+echo -e "   Узнайте свой внешний IP на одном из сайтов:"
+echo -e "     • https://myip.ru/"
+echo -e "     • https://2ip.ru/"
+echo -e "     • https://www.dnsleaktest.com/"
+echo
+read -p "Введите ваш внешний IP-адрес: " USER_IP
+# Простая проверка валидности IPv4
+if [[ ! "$USER_IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+    echo -e "${RED}❌ Неверный формат IP-адреса.${NC}"
+    exit 1
+fi
+# Дополнительная проверка: каждая часть ≤ 255
+IFS='.' read -r a b c d <<< "$USER_IP"
+if (( a > 255 || b > 255 || c > 255 || d > 255 )); then
+    echo -e "${RED}❌ Неверный IP-адрес (числа должны быть ≤ 255).${NC}"
+    exit 1
+fi
+# Предупреждение, если IP похож на приватный
+if [[ "$USER_IP" =~ ^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[01])) ]]; then
+    echo -e "${RED}⚠️  Внимание: вы ввели приватный (внутренний) IP-адрес!${NC}"
+    echo -e "${RED}   Такой адрес не работает из интернета. Используйте внешний IP с myip.ru.${NC}"
+    exit 1
+fi
+# Проверим, не добавлено ли уже это правило
+if ufw status | grep -q "ALLOW IN.*$USER_IP.*22"; then
+    echo -e "${GREEN}✅ Правило для $USER_IP уже существует.${NC}"
+else
+    echo -e "${GREEN}Открываем SSH для $USER_IP...${NC}"
+    ufw allow from "$USER_IP" to any port 22
+    echo -e "${GREEN}✅ Доступ по SSH разрешён с $USER_IP.${NC}"
+fi
+EOF
+chmod +x /usr/local/bin/openssh
+
+# Обновлённый help
 cat > $HOME/help <<'EOF'
 Доступные команды:
   mainuser    — показать ссылку и QR основного пользователя
@@ -270,7 +305,9 @@ cat > $HOME/help <<'EOF'
   rmuser      — удалить пользователя
   sharelink   — получить ссылку по номеру
   update      — обновить ядро
+  openssh     — разрешить SSH с вашего внешнего IP
 EOF
+
 clear
 LINK=$(mainuser)
 echo -e "${GREEN}✅ Установка sing-box (REALITY + Vision) завершена!${NC}"
@@ -281,5 +318,10 @@ echo
 echo "QR-код:"
 echo "$LINK" | qrencode -t ansiutf8
 echo
-echo -e "${RED}cat help"
+echo -e "${GREEN} Введите cat help для получения списка доступных команд${NC}"
+# === ДОБАВЛЕНО: напоминание о SSH ===
+echo
+echo -e "${YELLOW}🔒 Порт 22 (SSH) закрыт фаерволом. Чтобы получить доступ, выполните:${NC}"
+echo -e "${GREEN}       openssh${NC}"
+echo -e "${YELLOW}   и укажите ваш внешний IP (например, с myip.ru).${NC}"
 echo -e "${YELLOW}💡 Включите «режим VPN» и «Use Remote DNS» в клиенте (Hiddify и др.).${NC}"
