@@ -30,7 +30,7 @@ create_swap_if_needed
 echo -e "${GREEN}Обновление системы...${NC}"
 apt update && apt upgrade -y
 apt install -y curl wget gnupg net-tools qrencode jq uuid-runtime
-# === ДОБАВЛЕНО: ufw + fail2ban ===
+# Настройка ufw + fail2ban
 echo -e "${GREEN}Настройка ufw и fail2ban...${NC}"
 apt install -y ufw fail2ban
 ufw allow 443/tcp
@@ -82,7 +82,7 @@ private key: $REALITY_PRIV_KEY
 public key: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
-# Конфигурация с DoH Cloudflare
+# Конфигурация с DoH Cloudflare и маскировкой под www.cloudflare.com
 cat > /usr/local/etc/sing-box/config.json <<EOF
 {
   "log": {
@@ -109,7 +109,7 @@ cat > /usr/local/etc/sing-box/config.json <<EOF
       ],
       "tls": {
         "enabled": true,
-        "server_name": "icloud.com",
+        "server_name": "www.cloudflare.com",
         "reality": {
           "enabled": true,
           "private_key": "$REALITY_PRIV_KEY",
@@ -165,7 +165,7 @@ uuid=$(awk -F': ' '/uuid/ {print $2}' /usr/local/etc/sing-box/.keys)
 pbk=$(awk -F': ' '/public key/ {print $2}' /usr/local/etc/sing-box/.keys)
 sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/sing-box/.keys)
 ip=$(timeout 3 curl -4 -s icanhazip.com)
-link="vless://$uuid@$ip:443?security=reality&sni=icloud.com&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-$ip"
+link="vless://$uuid@$ip:443?security=reality&sni=www.cloudflare.com&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-$ip"
 echo ""
 echo "Ссылка для подключения:"
 echo "$link"
@@ -188,7 +188,7 @@ systemctl restart sing-box
 pbk=$(awk -F': ' '/public key/ {print $2}' /usr/local/etc/sing-box/.keys)
 sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/sing-box/.keys)
 ip=$(curl -4 -s icanhazip.com)
-link="vless://$uuid@$ip:443?security=reality&sni=icloud.com&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
+link="vless://$uuid@$ip:443?security=reality&sni=www.cloudflare.com&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
 echo
 echo "Ссылка:"
 echo "$link"
@@ -221,7 +221,7 @@ uuid=$(jq -r ".inbounds[0].users[$index].uuid" /usr/local/etc/sing-box/config.js
 pbk=$(awk -F': ' '/public key/ {print $2}' /usr/local/etc/sing-box/.keys)
 sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/sing-box/.keys)
 ip=$(curl -4 -s icanhazip.com)
-link="vless://$uuid@$ip:443?security=reality&sni=icloud.com&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#user-$n"
+link="vless://$uuid@$ip:443?security=reality&sni=www.cloudflare.com&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#user-$n"
 echo
 echo "Ссылка:"
 echo "$link"
@@ -249,7 +249,7 @@ systemctl restart sing-box
 echo "Готово."
 EOF
 chmod +x /usr/local/bin/update
-
+# Команда openssh
 cat > /usr/local/bin/openssh <<'EOF'
 #!/bin/bash
 RED='\033[0;31m'
@@ -294,7 +294,7 @@ else
 fi
 EOF
 chmod +x /usr/local/bin/openssh
-
+# Файл help
 cat > $HOME/help <<'EOF'
 Доступные команды:
   mainuser    — показать ссылку и QR основного пользователя
@@ -305,13 +305,11 @@ cat > $HOME/help <<'EOF'
   update      — обновить ядро
   openssh     — разрешить SSH с вашего внешнего IP
 EOF
-
 # Финальный вывод
 clear
 echo
 echo -e "${GREEN}✅ Установка sing-box (REALITY + Vision) завершена!${NC}"
 echo
-
 # Генерация ссылки для основного пользователя
 UUID=$(awk -F': ' '/uuid/ {print $2}' /usr/local/etc/sing-box/.keys)
 PBK=$(awk -F': ' '/public key/ {print $2}' /usr/local/etc/sing-box/.keys)
@@ -320,7 +318,7 @@ IP=$(curl -4 -s icanhazip.com)
 if [[ -z "$IP" ]]; then
     echo -e "${RED}⚠️ Не удалось определить IP для ссылки.${NC}"
 else
-    LINK="vless://$UUID@$IP:443?security=reality&sni=icloud.com&fp=firefox&pbk=$PBK&sid=$SID&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
+    LINK="vless://$UUID@$IP:443?security=reality&sni=www.cloudflare.com&fp=firefox&pbk=$PBK&sid=$SID&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
     echo "Ссылка для подключения:"
     echo
     echo "$LINK"
