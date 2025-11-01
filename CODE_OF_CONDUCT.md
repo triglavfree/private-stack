@@ -1,4 +1,5 @@
 # 🤝 Кодекс поведения
 
 Учитесь Любить ❤️ Жизнь полна Волшебства
-[Project X](https://xtls.github.io/en/config/outbounds/vless.html)
+
+## [Project X](https://xtls.github.io/en/config/outbounds/vless.html)
