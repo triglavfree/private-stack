@@ -1,4 +1,5 @@
 [![Qwen3-Max](https://img.shields.io/badge/Qwen3--Max-Alibaba_Cloud-1976D2?logo=alibabacloud&logoColor=white)](https://qwen.ai/)
+
 🛠️ Часть логики и оформление скрипта подготовлены при содействии языковой модели **Qwen3-Max** (Alibaba Cloud).
 
 # 🛡️ Private Stack
