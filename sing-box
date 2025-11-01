@@ -306,22 +306,32 @@ cat > $HOME/help <<'EOF'
   openssh     — разрешить SSH с вашего внешнего IP
 EOF
 
+# Финальный вывод
 clear
-LINK=$(mainuser)
+echo
 echo -e "${GREEN}✅ Установка sing-box (REALITY + Vision) завершена!${NC}"
 echo
-echo "Ссылка для подключения:"
-echo "$LINK"
-echo
-echo "QR-код:"
-echo "$LINK" | qrencode -t ansiutf8
-echo
-echo
-echo -e "${YELLOW}⚠️ Для получения списка доступных команд X-Ray, выполните:${NC}"
-echo -e "${GREEN}       cat help${NC}"
 
+# Генерация ссылки для основного пользователя
+UUID=$(awk -F': ' '/uuid/ {print $2}' /usr/local/etc/sing-box/.keys)
+PBK=$(awk -F': ' '/public key/ {print $2}' /usr/local/etc/sing-box/.keys)
+SID=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/sing-box/.keys)
+IP=$(curl -4 -s icanhazip.com)
+if [[ -z "$IP" ]]; then
+    echo -e "${RED}⚠️ Не удалось определить IP для ссылки.${NC}"
+else
+    LINK="vless://$UUID@$IP:443?security=reality&sni=icloud.com&fp=firefox&pbk=$PBK&sid=$SID&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
+    echo "Ссылка для подключения:"
+    echo
+    echo "$LINK"
+    echo
+    echo "QR-код:"
+    echo "$LINK" | qrencode -t ansiutf8
+fi
+echo
+echo -e "${YELLOW}⚠️ Для получения списка доступных команд, выполните:${NC}"
+echo -e "${GREEN}       cat help${NC}"
 echo -e "${YELLOW}🔒 Порт 22 (SSH) закрыт фаерволом. Чтобы получить доступ, выполните:${NC}"
 echo -e "${GREEN}       openssh${NC}"
 echo -e "${YELLOW}   и укажите ваш внешний IP (например, с myip.ru).${NC}"
-
 echo -e "${YELLOW}💡 Включите «Use Remote DNS» в клиенте (Hiddify) и режим VPN!${NC}"
