@@ -2,7 +2,7 @@
 > Часть логики и оформление подготовлены при содействии LLM **Qwen3-Max** (Alibaba Cloud).
 
 # 🛡️ [VLESS](https://xtls.github.io/ru/config/outbounds/vless.html) REALITY + Vision
-> Часть логики и оформление подготовлены при содействии LLM **Qwen3-Max** (Alibaba Cloud).
+
 
 ##  🚀 Установка
 ###  [xray-core](https://github.com/XTLS/Xray-core)
