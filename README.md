@@ -8,7 +8,7 @@
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/xray-core | bash
 ```
->⚠️ Выберите только один из двух скриптов. Не устанавливайте оба на один сервер — они конфликтуют за порт 443. 
+>⚠️ Не устанавливайте оба на один сервер — они конфликтуют за порт 443. 
 
 ###  [sing-box](https://github.com/SagerNet/sing-box)
 ```bash
