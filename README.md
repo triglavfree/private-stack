@@ -1,6 +1,6 @@
 [![Qwen3-Max](https://img.shields.io/badge/Qwen3--Max-Alibaba_Cloud-1976D2?logo=alibabacloud&logoColor=white)](https://qwen.ai/) [![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/)
 
-# 🛡️ Private Stack Vless REALITY + Vision
+# 🛡️ Vless REALITY + Vision
 > Часть логики и оформление скрипта подготовлены при содействии языковой модели **Qwen3-Max** (Alibaba Cloud).
 
 ### Требования
