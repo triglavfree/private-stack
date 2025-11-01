@@ -1,6 +1,6 @@
 [![Qwen3-Max](https://img.shields.io/badge/Qwen3--Max-Alibaba_Cloud-1976D2?logo=alibabacloud&logoColor=white)](https://qwen.ai/) [![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/)
 
-# 🛡️ Vless REALITY + Vision
+# 🛡️ VLESS REALITY + Vision
 > Часть логики и оформление подготовлены при содействии LLM **Qwen3-Max** (Alibaba Cloud).
 
 ##  🚀 Установка
