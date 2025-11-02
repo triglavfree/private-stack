@@ -72,7 +72,7 @@ SHORT_ID=$(openssl rand -hex 4)
 
 mkdir -p /usr/local/etc/xray
 
-# === Перезапись unit-файла (единожды) ===
+# === Перезапись unit-файла  ===
 cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
