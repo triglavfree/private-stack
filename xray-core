@@ -62,12 +62,6 @@ fi
 systemctl stop xray 2>/dev/null || true
 systemctl disable xray 2>/dev/null || true
 
-# Полностью удаляем всё, что создал установщик
-rm -f /etc/systemd/system/xray.service
-rm -f /etc/systemd/system/xray@.service
-rm -rf /etc/systemd/system/xray.service.d/
-rm -rf /etc/systemd/system/xray@.service.d/
-
 # Генерация ключей и переменных
 IP=$(curl -4 -s icanhazip.com)
 if [[ -z "$IP" ]]; then
@@ -81,26 +75,9 @@ REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^Password:/ {print $2}')
 SHORT_ID=$(openssl rand -hex 4)
 mkdir -p /usr/local/etc/xray
 
-# Создаём свой unit-файл БЕЗ User=
-cat > /etc/systemd/system/xray.service <<'EOF'
-[Unit]
-Description=Xray Service
-Documentation=https://github.com/xtls
-After=network.target nss-lookup.target
-
-[Service]
-Type=exec
-ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
-Restart=on-failure
-RestartPreventExitStatus=23
-LimitNPROC=10000
-LimitNOFILE=1000000
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
+# Перезагружаем systemd и запускаем Xray с новым конфигом
 systemctl daemon-reload
+systemctl enable --now xray
 
 # === Создание конфигурационных файлов ===
 cat > /usr/local/etc/xray/.keys <<EOF
@@ -300,37 +277,16 @@ EOF
 cat > /usr/local/bin/update <<'EOF'
 #!/bin/bash
 echo "Обновление Xray..."
+# Останавливаем службу перед обновлением
+systemctl stop xray
+
+# Обновляем, НЕ трогая unit-файлы
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
 
-# Полная очистка от drop-in и старых unit
-rm -rf /etc/systemd/system/xray.service.d/
-rm -rf /etc/systemd/system/xray@.service.d/
-rm -f /etc/systemd/system/xray.service
-rm -f /etc/systemd/system/xray@.service
-
-# Пересоздаём свой unit
-cat > /etc/systemd/system/xray.service <<'INNEREOF'
-[Unit]
-Description=Xray Service
-Documentation=https://github.com/xtls
-After=network.target nss-lookup.target
-
-[Service]
-Type=exec
-ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
-Restart=on-failure
-RestartPreventExitStatus=23
-LimitNPROC=10000
-LimitNOFILE=1000000
-
-[Install]
-WantedBy=multi-user.target
-INNEREOF
-
+# Перезапускаем
 systemctl daemon-reload
 systemctl restart xray
 echo "✅ Xray обновлён."
-EOF
 
 chmod +x /usr/local/bin/{listuser,adduser,rmuser,sharelink,mainuser,update,sharelink_by_name}
 
