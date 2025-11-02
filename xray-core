@@ -91,6 +91,7 @@ LimitNOFILE=1000000
 WantedBy=multi-user.target
 EOF
 
+rm -f /etc/systemd/system/xray.service.d/10-donot_touch_single_conf.conf
 systemctl daemon-reload
 
 # === Создание конфигурационных файлов ===
