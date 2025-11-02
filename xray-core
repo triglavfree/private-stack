@@ -48,32 +48,20 @@ if ss -tuln | grep -q ':443 '; then
     echo -e "${RED}Порт 443 занят! Остановите другие сервисы (nginx, apache, sing-box).${NC}"
     exit 1
 fi
-
-# Установка Xray
+# Установка Xray (только бинарник, игнорируем его unit)
 echo -e "${GREEN}Установка Xray-core...${NC}"
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
-if ! command -v xray &> /dev/null; then
-    echo -e "${RED}Ошибка: xray не установлен.${NC}"
-    exit 1
-fi
 
-# === Генерация ключей и переменных ===
-IP=$(curl -4 -s icanhazip.com)
-if [[ -z "$IP" ]]; then
-    echo -e "${RED}Не удалось определить IPv4.${NC}"
-    exit 1
-fi
+# Удаляем ВСЕ drop-in файлы, созданные установщиком
+rm -rf /etc/systemd/system/xray.service.d/
+rm -rf /etc/systemd/system/xray@.service.d/
 
-UUID=$(xray uuid)
-KEYPAIR=$(xray x25519)
-REALITY_PRIV_KEY=$(echo "$KEYPAIR" | awk '/^PrivateKey:/ {print $2}')
-REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^Password:/ {print $2}')
-SHORT_ID=$(openssl rand -hex 4)
+# Удаляем unit-файлы, созданные установщиком
+rm -f /etc/systemd/system/xray.service
+rm -f /etc/systemd/system/xray@.service
 
-mkdir -p /usr/local/etc/xray
-
-# === Перезапись unit-файла  ===
-cat > /etc/systemd/system/xray.service <<EOF
+# Создаём свой unit-файл БЕЗ User=
+cat > /etc/systemd/system/xray.service <<'EOF'
 [Unit]
 Description=Xray Service
 Documentation=https://github.com/xtls
@@ -91,7 +79,6 @@ LimitNOFILE=1000000
 WantedBy=multi-user.target
 EOF
 
-rm -f /etc/systemd/system/xray.service.d/10-donot_touch_single_conf.conf
 systemctl daemon-reload
 
 # === Создание конфигурационных файлов ===
