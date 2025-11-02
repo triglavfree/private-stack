@@ -10,10 +10,13 @@ apt update && apt upgrade -y
 apt install -y qrencode curl jq
 
 # 2. BBR
-if ! sysctl -n net.ipv4.tcp_congestion_control | grep -q '^bbr$'; then
+if ! sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null | grep -q '^bbr$'; then
     echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
     echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-    sysctl -p
+    sysctl -p >/dev/null 2>&1
+    echo "BBR включён"
+else
+    echo "BBR уже включён"
 fi
 
 # 3. Swap: 2 ГБ если RAM ≤ 1 ГБ и swap отсутствует
@@ -43,10 +46,10 @@ setup_swap_if_needed() {
         else
             # fallback для файловых систем, не поддерживающих fallocate
             echo "info: fallocate недоступен, используем dd..."
-            dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+            dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none 2>/dev/null
         fi
         chmod 600 /swapfile
-        mkswap /swapfile >/dev/null
+        mkswap /swapfile >/dev/null 2>&1
         swapon /swapfile
         echo '/swapfile none swap sw 0 0' >> /etc/fstab
         echo "info: swap 2 ГБ успешно создан и активирован."
@@ -58,26 +61,34 @@ setup_swap_if_needed() {
 # ВЫЗЫВАЕМ ФУНКЦИЮ создания swap
 setup_swap_if_needed
 
+# Создаём директории ДО установки
+mkdir -p /usr/local/etc/xray
+
+# Создаём ВРЕМЕННЫЙ минимальный конфиг (чтобы сервис запустился)
+cat > /usr/local/etc/xray/config.json << EOF
+{
+    "log": {"loglevel": "warning"},
+    "inbounds": [],
+    "outbounds": [{"protocol": "freedom", "tag": "direct"}]
+}
+EOF
+
 # Устанавливаем Xray с правильными флагами
 bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --without-logfiles --no-update-service
+
+# ГЕНЕРИРУЕМ КЛЮЧИ ПОСЛЕ УСТАНОВКИ XRAY (ТОЛЬКО ОДИН РАЗ!)
+rm -f /usr/local/etc/xray/.keys
+{
+  echo "shortsid: $(openssl rand -hex 8)"
+  echo "uuid: $(/usr/local/bin/xray uuid)"
+  /usr/local/bin/xray x25519
+} > /usr/local/etc/xray/.keys
 
 # Настройка journald: логи только в RAM
 if ! grep -q '^Storage=volatile' /etc/systemd/journald.conf; then
     sed -i 's/^#Storage=.*/Storage=volatile/' /etc/systemd/journald.conf
-    systemctl restart systemd-journald
+    systemctl restart systemd-journald >/dev/null 2>&1
 fi
-
-# Очистка существующих логов
-journalctl --vacuum-time=1s --no-pager >/dev/null 2>&1
-find /var/log -type f -name "*.log" -exec truncate -s0 {} \; 2>/dev/null || true
-
-# ГЕНЕРИРУЕМ КЛЮЧИ ПОСЛЕ УСТАНОВКИ XRAY
-rm -f /usr/local/etc/xray/.keys
-{
-  echo "shortsid: $(openssl rand -hex 8)"
-  echo "uuid: $(xray uuid)"
-  xray x25519
-} > /usr/local/etc/xray/.keys
 
 # Извлекаем корректно
 export shortsid=$(grep '^shortsid:' /usr/local/etc/xray/.keys | cut -d' ' -f2)
@@ -92,7 +103,7 @@ if [ -z "$shortsid" ] || [ -z "$uuid" ] || [ -z "$privatkey" ] || [ -z "$pbk" ];
     exit 1
 fi
 
-# Конфиг Xray — последняя версия согласно документации
+# Конфиг Xray — исправленный DNS (убраны лишние пробелы)
 cat > /usr/local/etc/xray/config.json << EOF
 {
     "log": {
@@ -186,6 +197,10 @@ cat > /usr/local/etc/xray/config.json << EOF
 }
 EOF
 
+# Перезапускаем сервис с реальным конфигом
+systemctl daemon-reload
+systemctl restart xray
+
 # Создаём утилиты
 for cmd in userlist mainuser newuser rmuser sharelink; do
     touch "/usr/local/bin/$cmd"
@@ -194,13 +209,15 @@ done
 
 cat > /usr/local/bin/listuser << 'EOF'
 #!/bin/bash
-emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
-if [[ ${#emails[@]} -eq 0 ]]; then
-    echo "Список клиентов пуст"
+emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json" 2>/dev/null))
+if [[ ${#emails[@]} -eq 0 ]] || [[ $? -ne 0 ]]; then
+    echo "Список клиентов пуст или конфиг поврежден"
     exit 1
 fi
 echo "Список клиентов:"
-for i in "${!emails[@]}"; do echo "$((i+1)). ${emails[$i]}"; done
+for i in "${!emails[@]}"; do 
+    echo "$((i+1)). ${emails[$i]}"
+done
 EOF
 
 cat > /usr/local/bin/mainuser << 'EOF'
@@ -209,6 +226,9 @@ uuid=$(grep '^uuid:' /usr/local/etc/xray/.keys | cut -d' ' -f2)
 pbk=$(grep '^Public key:' /usr/local/etc/xray/.keys | cut -d' ' -f3-)
 sid=$(grep '^shortsid:' /usr/local/etc/xray/.keys | cut -d' ' -f2)
 ip=$(timeout 3 curl -4 -s icanhazip.com)
+if [[ -z "$ip" ]]; then
+    ip=$(hostname -I | awk '{print $1}')
+fi
 link="vless://$uuid@$ip:443?security=reality&sni=www.cloudflare.com&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
 echo -e "\nСсылка для подключения:\n$link\n\nQR-код:"
 echo "$link" | qrencode -t ansiutf8
@@ -216,21 +236,32 @@ EOF
 
 cat > /usr/local/bin/newuser << 'EOF'
 #!/bin/bash
-read -p "Введите имя пользователя без пробелов: " email
+read -p "Введите имя пользователя (email): " email
 if [[ -z "$email" || "$email" == *" "* ]]; then
     echo "Имя не может быть пустым или содержать пробелы."
     exit 1
 fi
-if jq -e --arg e "$email" '.inbounds[0].settings.clients[] | select(.email == $e)' /usr/local/etc/xray/config.json >/dev/null; then
+if jq -e --arg e "$email" '.inbounds[0].settings.clients[] | select(.email == $e)' /usr/local/etc/xray/config.json >/dev/null 2>&1; then
     echo "Пользователь уже существует."
     exit 1
 fi
-uuid=$(xray uuid)
+uuid=$(/usr/local/bin/xray uuid)
+if [[ $? -ne 0 ]]; then
+    echo "Ошибка генерации UUID"
+    exit 1
+fi
 jq --arg e "$email" --arg u "$uuid" '.inbounds[0].settings.clients += [{"email": $e, "id": $u, "flow": "xtls-rprx-vision"}]' /usr/local/etc/xray/config.json > /tmp/x && mv /tmp/x /usr/local/etc/xray/config.json
+if [[ $? -ne 0 ]]; then
+    echo "Ошибка обновления конфигурации"
+    exit 1
+fi
 systemctl restart xray
 pbk=$(grep '^Public key:' /usr/local/etc/xray/.keys | cut -d' ' -f3-)
 sid=$(grep '^shortsid:' /usr/local/etc/xray/.keys | cut -d' ' -f2)
-ip=$(curl -4 -s icanhazip.com)
+ip=$(timeout 3 curl -4 -s icanhazip.com)
+if [[ -z "$ip" ]]; then
+    ip=$(hostname -I | awk '{print $1}')
+fi
 link="vless://$uuid@$ip:443?security=reality&sni=www.cloudflare.com&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
 echo -e "\nСсылка:\n$link\n\nQR:"
 echo "$link" | qrencode -t ansiutf8
@@ -238,35 +269,62 @@ EOF
 
 cat > /usr/local/bin/rmuser << 'EOF'
 #!/bin/bash
-emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
-if [[ ${#emails[@]} -eq 0 ]]; then echo "Нет клиентов"; exit 1; fi
-for i in "${!emails[@]}"; do echo "$((i+1)). ${emails[$i]}"; done
+emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json" 2>/dev/null))
+if [[ ${#emails[@]} -eq 0 ]] || [[ $? -ne 0 ]]; then 
+    echo "Нет клиентов или конфиг поврежден"
+    exit 1
+fi
+echo "Список клиентов:"
+for i in "${!emails[@]}"; do 
+    echo "$((i+1)). ${emails[$i]}"
+done
 read -p "Номер для удаления: " n
-if ! [[ "$n" =~ ^[0-9]+$ ]] || ((n < 1 || n > ${#emails[@]})); then echo "Неверный номер"; exit 1; fi
+if ! [[ "$n" =~ ^[0-9]+$ ]] || ((n < 1 || n > ${#emails[@]})); then 
+    echo "Неверный номер"
+    exit 1
+fi
 email="${emails[$((n-1))]}"
-jq --arg e "$e" '(.inbounds[0].settings.clients) |= map(select(.email != $e))' /usr/local/etc/xray/config.json > /tmp/x && mv /tmp/x /usr/local/etc/xray/config.json
+jq --arg e "$email" '(.inbounds[0].settings.clients) |= map(select(.email != $e))' /usr/local/etc/xray/config.json > /tmp/x && mv /tmp/x /usr/local/etc/xray/config.json
+if [[ $? -ne 0 ]]; then
+    echo "Ошибка обновления конфигурации"
+    exit 1
+fi
 systemctl restart xray
 echo "Удалён: $email"
 EOF
 
 cat > /usr/local/bin/sharelink << 'EOF'
 #!/bin/bash
-emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
-for i in "${!emails[@]}"; do echo "$((i+1)). ${emails[$i]}"; done
+emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json" 2>/dev/null))
+if [[ ${#emails[@]} -eq 0 ]] || [[ $? -ne 0 ]]; then
+    echo "Нет клиентов или конфиг поврежден"
+    exit 1
+fi
+echo "Список клиентов:"
+for i in "${!emails[@]}"; do 
+    echo "$((i+1)). ${emails[$i]}"
+done
 read -p "Выберите: " n
-if ! [[ "$n" =~ ^[0-9]+$ ]] || ((n < 1 || n > ${#emails[@]})); then echo "Неверный номер"; exit 1; fi
+if ! [[ "$n" =~ ^[0-9]+$ ]] || ((n < 1 || n > ${#emails[@]})); then 
+    echo "Неверный номер"
+    exit 1
+fi
 email="${emails[$((n-1))]}"
-uuid=$(jq -r --arg e "$email" '.inbounds[0].settings.clients[] | select(.email == $e) | .id' /usr/local/etc/xray/config.json)
+uuid=$(jq -r --arg e "$email" '.inbounds[0].settings.clients[] | select(.email == $e) | .id' /usr/local/etc/xray/config.json 2>/dev/null)
+if [[ -z "$uuid" ]] || [[ $? -ne 0 ]]; then
+    echo "Ошибка получения UUID пользователя"
+    exit 1
+fi
 pbk=$(grep '^Public key:' /usr/local/etc/xray/.keys | cut -d' ' -f3-)
 sid=$(grep '^shortsid:' /usr/local/etc/xray/.keys | cut -d' ' -f2)
-ip=$(curl -4 -s icanhazip.com)
+ip=$(timeout 3 curl -4 -s icanhazip.com)
+if [[ -z "$ip" ]]; then
+    ip=$(hostname -I | awk '{print $1}')
+fi
 link="vless://$uuid@$ip:443?security=reality&sni=www.cloudflare.com&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
 echo -e "\nСсылка:\n$link\n\nQR:"
 echo "$link" | qrencode -t ansiutf8
 EOF
-
-# Перезапуск
-systemctl restart xray
 
 # Подсказки
 cat > "$HOME/help" << 'EOF'
@@ -282,4 +340,4 @@ cat > "$HOME/help" << 'EOF'
 EOF
 
 echo "✅ Установка завершена. Выполняется генерация ссылки..."
-mainuser
+/usr/local/bin/mainuser
