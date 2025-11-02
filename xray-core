@@ -51,7 +51,7 @@ fi
 
 # Установка Xray
 echo -e "${GREEN}Установка Xray-core...${NC}"
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
 if ! command -v xray &> /dev/null; then
     echo -e "${RED}Ошибка: xray не установлен.${NC}"
     exit 1
@@ -292,7 +292,7 @@ EOF
 cat > /usr/local/bin/update <<'EOF'
 #!/bin/bash
 echo "Обновление Xray..."
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
 
 # Перезаписываем unit-файл и удаляем drop-in
 cat > /etc/systemd/system/xray.service <<'INNEREOF'
