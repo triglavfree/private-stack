@@ -1,3 +1,466 @@
+#!/bin/bash
+set -e
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+if [[ $EUID -ne 0 ]]; then
+   echo -e "${RED}Запустите от root.${NC}"
+   exit 1
+fi
+
+# === 1. Оптимизация ядра и сетевых настроек ===
+echo -e "${GREEN}Применение оптимизаций ядра и сети...${NC}"
+cat > /etc/sysctl.d/99-xray-tuning.conf <<EOF
+# Оптимизация TCP для высокой пропускной способности
+net.core.rmem_max=26214400
+net.core.wmem_max=26214400
+net.core.netdev_max_backlog=300000
+net.ipv4.tcp_rmem=4096 87380 26214400
+net.ipv4.tcp_wmem=4096 65536 26214400
+net.ipv4.tcp_congestion_control=bbr
+net.ipv4.tcp_fastopen=3
+net.ipv4.tcp_tw_reuse=1
+net.ipv4.tcp_fin_timeout=30
+net.core.somaxconn=1024
+net.ipv4.ip_local_port_range=1024 65535
+net.ipv4.tcp_max_syn_backlog=2048
+net.ipv4.tcp_slow_start_after_idle=0
+net.ipv4.tcp_keepalive_time=60
+net.ipv4.tcp_keepalive_intvl=10
+net.ipv4.tcp_keepalive_probes=6
+# Оптимизация для работы с большим количеством соединений
+fs.file-max=2097152
+vm.swappiness=10
+vm.vfs_cache_pressure=50
+EOF
+sysctl -p /etc/sysctl.d/99-xray-tuning.conf >/dev/null 2>&1
+echo -e "${GREEN}✅ Оптимизации ядра применены.${NC}"
+
+# Обновление системы
+echo -e "${GREEN}Обновление системы...${NC}"
+apt update && apt upgrade -y
+apt install -y curl wget gnupg qrencode jq ifstat
+
+# Создание swap
+create_swap_if_needed() {
+    TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    TOTAL_MEM_GB=$((TOTAL_MEM_KB / 1024 / 1024))
+    if [ "$TOTAL_MEM_GB" -le 1 ]; then
+        if ! swapon --show | grep -q '/swapfile'; then
+            echo -e "${GREEN}Создание swap-файла 2 ГБ...${NC}"
+            fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+            chmod 600 /swapfile
+            mkswap /swapfile
+            swapon /swapfile
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab
+            echo 'vm.swappiness=10' >> /etc/sysctl.conf
+            echo 'vm.vfs_cache_pressure=50' >> /etc/sysctl.conf
+            sysctl -p >/dev/null 2>&1
+            echo -e "${GREEN}Swap создан.${NC}"
+        fi
+    fi
+}
+create_swap_if_needed
+
+# Настройка ufw (только 443)
+echo -e "${GREEN}Настройка ufw...${NC}"
+apt install -y ufw
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 443/tcp
+ufw --force enable
+
+# Проверка занятости порта 443
+if ss -tuln | grep -q ':443 '; then
+    echo -e "${RED}Порт 443 занят! Остановите другие сервисы (nginx, apache, sing-box).${NC}"
+    exit 1
+fi
+
+# Установка Xray-core...
+echo -e "${GREEN}Установка Xray-core...${NC}"
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
+if ! command -v xray &> /dev/null; then
+    echo -e "${RED}Ошибка: xray не установлен.${NC}"
+    exit 1
+fi
+
+# Остановим службу, если она запущена установщиком
+systemctl stop xray 2>/dev/null || true
+systemctl disable xray 2>/dev/null || true
+
+# Генерация ключей и переменных
+IP=$(curl -4 -s --max-time 3 icanhazip.com)
+if [[ -z "$IP" ]]; then
+    echo -e "${RED}Не удалось определить IPv4.${NC}"
+    exit 1
+fi
+UUID=$(xray uuid)
+KEYPAIR=$(xray x25519)
+REALITY_PRIV_KEY=$(echo "$KEYPAIR" | awk '/^PrivateKey:/ {print $2}')
+REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^Password:/ {print $2}')
+SHORT_ID=$(openssl rand -hex 4)
+mkdir -p /usr/local/etc/xray
+
+# === Создание улучшенного конфигурационного файла БЕЗ СБОРА СТАТИСТИКИ ===
+cat > /usr/local/etc/xray/.keys <<EOF
+uuid: $UUID
+Private key: $REALITY_PRIV_KEY
+Password: $REALITY_PUB_KEY
+shortsid: $SHORT_ID
+EOF
+
+cat > /usr/local/etc/xray/config.json <<EOF
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "dns": {
+    "servers": [
+      {
+        "address": "https://1.1.1.1/dns-query",
+        "domains": ["geosite:category-ads-all", "geosite:category-porn"]
+      },
+      "https://1.1.1.1/dns-query"
+    ],
+    "tag": "doh-cloudflare",
+    "disableFallback": true,
+    "disableCache": true,
+    "queryStrategy": "UseIPv4"
+  },
+  "inbounds": [
+    {
+      "port": 443,
+      "listen": "0.0.0.0",
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "$UUID",
+            "email": "main",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "sockopt": {
+          "tcpFastOpen": true,
+          "tcpKeepAliveInterval": 30,
+          "tcpNoDelay": true,
+          "mark": 255
+        },
+        "realitySettings": {
+          "dest": "www.cloudflare.com:443",
+          "xver": 0,
+          "serverNames": ["www.cloudflare.com"],
+          "privateKey": "$REALITY_PRIV_KEY",
+          "shortIds": ["$SHORT_ID"],
+          "maxTimeDiff": 3600
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "metadataOnly": false,
+        "routeOnly": true
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "settings": {},
+      "tag": "direct",
+      "streamSettings": {
+        "sockopt": {
+          "tcpFastOpen": true,
+          "tcpKeepAliveInterval": 30,
+          "tcpNoDelay": true,
+          "mark": 255
+        }
+      },
+      "dnsSettings": {
+        "server": "https://1.1.1.1/dns-query"
+      }
+    },
+    {
+      "protocol": "dns",
+      "tag": "dns-out"
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "blocked",
+      "settings": {
+        "response": {
+          "type": "http"
+        }
+      }
+    }
+  ],
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "domainMatcher": "hybrid",
+    "rules": [
+      {
+        "type": "field",
+        "port": "53",
+        "outboundTag": "dns-out"
+      },
+      {
+        "type": "field",
+        "domain": ["geosite:category-ads-all", "geosite:google-ads", "geosite:category-porn", "geosite:category-tracking"],
+        "outboundTag": "blocked"
+      },
+      {
+        "type": "field",
+        "domain": ["domain:doubleclick.net", "domain:google-analytics.com", "domain:facebook.com", "domain:twitter.com", "domain:adobe.com"],
+        "outboundTag": "blocked"
+      },
+      {
+        "type": "field",
+        "ip": ["geoip:private", "geoip:cn", "geoip:ru"],
+        "outboundTag": "direct"
+      }
+    ]
+  },
+  "policy": {
+    "levels": {
+      "0": {
+        "handshake": 4,
+        "connIdle": 300,
+        "uplinkOnly": 2,
+        "downlinkOnly": 5,
+        "bufferSize": 16
+      }
+    }
+  },
+  "transport": {
+    "tcp": {
+      "header": {
+        "type": "none"
+      }
+    }
+  }
+}
+EOF
+
+echo "main:$UUID:$SHORT_ID" > /usr/local/etc/xray/.users
+
+# === Запуск службы (используем официальный unit) ===
+systemctl daemon-reload
+systemctl enable --now xray
+sleep 3
+if ! ss -tuln | grep -q ':443 '; then
+    echo -e "${RED}❌ Критическая ошибка: Xray не слушает порт 443.${NC}"
+    echo "Проверьте журнал службы:"
+    journalctl -u xray -n 20 --no-pager
+    exit 1
+else
+    echo -e "${GREEN}✅ Xray успешно слушает порт 443.${NC}"
+fi
+
+# === 2. ИСПРАВЛЕННЫЙ adduser (корректное использование jq) ===
+cat > /usr/local/bin/adduser <<'EOF'
+#!/bin/bash
+set -e
+CONF_DIR="/usr/local/etc/xray"
+USERS="$CONF_DIR/.users"
+CONFIG="$CONF_DIR/config.json"
+
+# Валидация имени пользователя
+read -p "Введите имя нового пользователя (только буквы, цифры, _ и -): " name
+if [[ ! "$name" =~ ^[a-zA-Z0-9_\-]+$ ]]; then
+    echo -e "\033[0;31m❌ Имя должно содержать только буквы, цифры, _ и -\033[0m"
+    exit 1
+fi
+
+if [[ -z "$name" ]]; then
+    echo -e "\033[0;31m❌ Имя не может быть пустым.\033[0m"
+    exit 1
+fi
+
+if grep -q "^$name:" "$USERS" 2>/dev/null; then
+    echo -e "\033[0;31m❌ Пользователь '$name' уже существует.\033[0m"
+    exit 1
+fi
+
+# Создание резервной копии перед изменениями
+cp "$CONFIG" "$CONFIG.bak_$(date +%Y%m%d_%H%M%S)"
+
+# Генерация данных пользователя
+uuid=$(xray uuid)
+shortid=$(openssl rand -hex 4)
+echo "$name:$uuid:$shortid" >> "$USERS"
+
+# Безопасное обновление конфигурации
+temp_file=$(mktemp)
+jq -r '.inbounds[0].settings.clients[] | "\(.email):\(.id):\(.flow)"' "$CONFIG" > "$temp_file"
+echo "$name:$uuid:xtls-rprx-vision" >> "$temp_file"
+
+# Создание JSON массива клиентов
+clients_json=$(awk -F: 'BEGIN {print "["} 
+    NR==1 {printf "  {\"id\": \"%s\", \"email\": \"%s\", \"flow\": \"%s\"}", $2, $1, $3} 
+    NR>1 {printf ",\n  {\"id\": \"%s\", \"email\": \"%s\", \"flow\": \"%s\"}", $2, $1, $3} 
+    END {print "\n]"}' "$temp_file")
+
+# Обновление конфигурации
+jq --argjson clients "$clients_json" '.inbounds[0].settings.clients = $clients' "$CONFIG" > /tmp/config.tmp && mv /tmp/config.tmp "$CONFIG"
+
+# Проверка конфигурации перед применением
+if ! xray check; then
+    echo -e "\033[0;31m❌ Ошибка в конфигурации. Восстанавливаем из резервной копии.\033[0m"
+    cp "$CONFIG.bak_$(date +%Y%m%d_%H%M%S)" "$CONFIG"
+    rm -f "$temp_file"
+    exit 1
+fi
+
+systemctl restart xray
+rm -f "$temp_file"
+
+# Ожидание перезапуска службы
+sleep 2
+if ! ss -tuln | grep -q ':443 '; then
+    echo -e "\033[0;31m❌ Xray не запустился после добавления пользователя. Восстанавливаем конфигурацию.\033[0m"
+    cp "$CONFIG.bak_$(date +%Y%m%d_%H%M%S)" "$CONFIG"
+    systemctl restart xray
+    exit 1
+fi
+
+echo -e "\033[0;32m✅ Пользователь '$name' успешно добавлен.\033[0m"
+/usr/local/bin/sharelink_by_name "$name"
+EOF
+chmod +x /usr/local/bin/adduser
+
+# === 3. ИСПРАВЛЕННЫЙ rmuser (корректное использование jq) ===
+cat > /usr/local/bin/rmuser <<'EOF'
+#!/bin/bash
+set -e
+CONF_DIR="/usr/local/etc/xray"
+USERS="$CONF_DIR/.users"
+CONFIG="$CONF_DIR/config.json"
+
+if [[ ! -s "$USERS" ]]; then
+    echo "Нет пользователей для удаления."
+    exit 1
+fi
+
+echo "Выберите пользователя для удаления:"
+awk -F: '{print NR ". " $1}' "$USERS"
+read -p "Номер: " num
+total=$(wc -l < "$USERS")
+if ! [[ "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
+    echo -e "\033[0;31m❌ Неверный номер.\033[0m"
+    exit 1
+fi
+
+name=$(sed -n "${num}p" "$USERS" | cut -d: -f1)
+echo -e "\033[1;33m⚠️  Вы уверены, что хотите удалить пользователя '$name'? (y/n)\033[0m"
+read -p "Подтвердите: " confirm
+if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+    echo "❌ Отмена операции."
+    exit 1
+fi
+
+# Создание резервной копии
+cp "$CONFIG" "$CONFIG.bak_$(date +%Y%m%d_%H%M%S)"
+
+# Удаление пользователя из файла
+sed -i "${num}d" "$USERS"
+
+temp_file=$(mktemp)
+if [[ -s "$USERS" ]]; then
+    # Если остались пользователи
+    jq -r '.inbounds[0].settings.clients[] | "\(.email):\(.id):\(.flow)"' "$CONFIG" > "$temp_file"
+    grep -v "^$name:" "$USERS" | awk -F: '{print $1 ":" $2 ":" "xtls-rprx-vision"}' > "$temp_file.tmp"
+    mv "$temp_file.tmp" "$temp_file"
+    
+    # Создание JSON массива клиентов
+    clients_json=$(awk -F: 'BEGIN {print "["} 
+        NR==1 {printf "  {\"id\": \"%s\", \"email\": \"%s\", \"flow\": \"%s\"}", $2, $1, $3} 
+        NR>1 {printf ",\n  {\"id\": \"%s\", \"email\": \"%s\", \"flow\": \"%s\"}", $2, $1, $3} 
+        END {print "\n]"}' "$temp_file")
+    
+    jq --argjson clients "$clients_json" '.inbounds[0].settings.clients = $clients' "$CONFIG" > /tmp/config.tmp && mv /tmp/config.tmp "$CONFIG"
+else
+    # Если это был последний пользователь
+    jq '.inbounds[0].settings.clients = []' "$CONFIG" > /tmp/config.tmp && mv /tmp/config.tmp "$CONFIG"
+fi
+
+# Проверка конфигурации
+if ! xray check; then
+    echo -e "\033[0;31m❌ Ошибка в конфигурации. Восстанавливаем из резервной копии.\033[0m"
+    cp "$CONFIG.bak_$(date +%Y%m%d_%H%M%S)" "$CONFIG"
+    if ! grep -q "^$name:" "$USERS"; then
+        echo "$name:$uuid:$shortid" >> "$USERS"  # Восстанавливаем пользователя в файл
+    fi
+    rm -f "$temp_file"
+    exit 1
+fi
+
+systemctl restart xray
+rm -f "$temp_file"
+
+# Ожидание перезапуска службы
+sleep 2
+if ! ss -tuln | grep -q ':443 '; then
+    echo -e "\033[0;31m❌ Xray не запустился после удаления пользователя. Восстанавливаем конфигурацию.\033[0m"
+    cp "$CONFIG.bak_$(date +%Y%m%d_%H%M%S)" "$CONFIG"
+    systemctl restart xray
+    exit 1
+fi
+
+echo -e "\033[0;32m✅ Пользователь '$name' успешно удален.\033[0m"
+EOF
+chmod +x /usr/local/bin/rmuser
+
+# === 4. Улучшенный sharelink_by_name с кэшированием IP ===
+cat > /usr/local/bin/sharelink_by_name <<'EOF'
+#!/bin/bash
+CONF_DIR="/usr/local/etc/xray"
+USERS="$CONF_DIR/.users"
+
+# Кэширование IP для текущей сессии
+if [ -z "$SERVER_IP" ]; then
+    export SERVER_IP=$(curl -4 -s --max-time 3 icanhazip.com)
+    if [ -z "$SERVER_IP" ]; then
+        echo -e "\033[0;31m❌ Не удалось определить IP сервера\033[0m"
+        exit 1
+    fi
+fi
+
+name="$1"
+if [[ -z "$name" ]]; then
+    echo "Использование: $0 <имя_пользователя>"
+    exit 1
+fi
+
+line=$(grep "^$name:" "$USERS")
+if [[ -z "$line" ]]; then
+    echo -e "\033[0;31m❌ Пользователь '$name' не найден.\033[0m"
+    exit 1
+fi
+
+uuid=$(echo "$line" | cut -d: -f2)
+sid=$(echo "$line" | cut -d: -f3)
+pbk=$(awk -F': ' '/Password:/ {print $2}' "$CONF_DIR/.keys")
+sni="www.cloudflare.com"
+
+link="vless://$uuid@$SERVER_IP:443?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#$name"
+
+echo
+echo -e "\033[0;32m🔗 Ссылка для '$name':\033[0m"
+echo "$link"
+echo
+echo -e "\033[0;33mQR-код:\033[0m"
+echo "$link" | qrencode -t ansiutf8 -s 1
+EOF
+chmod +x /usr/local/bin/sharelink_by_name
+
+# === 5. БАЗОВАЯ КОМАНДА ПРОВЕРКИ СОСТОЯНИЯ (БЕЗ СБОРА СТАТИСТИКИ) ===
 cat > /usr/local/bin/status <<'EOF'
 #!/bin/bash
 set -e
@@ -37,3 +500,263 @@ echo "  • journalctl -u xray -n 50 - просмотр последних со�
 echo -e "\033[1;31mВАЖНО: Данные не сохраняются - это соответствует политике 'Нет логов'.\033[0m"
 EOF
 chmod +x /usr/local/bin/status
+
+# === 6. Автоматическое обновление ===
+cat > /usr/local/bin/auto-update <<'EOF'
+#!/bin/bash
+set -e
+
+echo -e "\033[1;33m🔄 Проверка автоматических обновлений Xray...\033[0m"
+
+# Проверка последнего обновления
+LAST_CHECK_FILE="/tmp/xray-last-auto-check"
+if [ -f "$LAST_CHECK_FILE" ]; then
+    LAST_CHECK=$(cat "$LAST_CHECK_FILE")
+    CURRENT_TIME=$(date +%s)
+    TIME_DIFF=$((CURRENT_TIME - LAST_CHECK))
+    
+    # Проверяем раз в 24 часа
+    if [ "$TIME_DIFF" -lt 86400 ]; then
+        echo -e "\033[0;33mℹ️  Автоматическая проверка обновлений выполняется раз в 24 часа.\033[0m"
+        echo "Последняя проверка: $(date -d @$LAST_CHECK)"
+        exit 0
+    fi
+fi
+
+echo "$(date +%s)" > "$LAST_CHECK_FILE"
+
+# Получение текущей и последней версии
+CURRENT_VER=$(xray version | head -1 | awk '{print $2}' | sed 's/v//')
+echo -e "\033[0;32mТекущая версия: v$CURRENT_VER\033[0m"
+
+# Попытка получить последнюю версию с GitHub API
+LATEST_VER=$(curl -sL --max-time 5 "https://api.github.com/repos/XTLS/Xray-core/releases/latest" | jq -r '.tag_name' 2>/dev/null | sed 's/v//')
+if [ -z "$LATEST_VER" ] || [ "$LATEST_VER" = "null" ]; then
+    echo -e "\033[0;33m⚠️  Не удалось получить информацию о последней версии с GitHub.\033[0m"
+    echo "Проверьте соединение с интернетом или попробуйте позже."
+    exit 1
+fi
+
+echo -e "\033[0;32mПоследняя версия: v$LATEST_VER\033[0m"
+
+# Сравнение версий
+if [ "$CURRENT_VER" = "$LATEST_VER" ]; then
+    echo -e "\033[0;32m✅ Xray обновлен до последней версии.\033[0m"
+    exit 0
+fi
+
+echo -e "\n\033[1;33m⚠️  Доступна новая версия Xray!\033[0m"
+echo "Текущая: v$CURRENT_VER"
+echo "Последняя: v$LATEST_VER"
+
+read -p "Хотите обновить Xray? (y/n): " choice
+if [ "$choice" != "y" ] && [ "$choice" != "Y" ]; then
+    echo -e "\033[0;33mℹ️  Обновление отменено.\033[0m"
+    exit 0
+fi
+
+# Создание резервной копии перед обновлением
+echo -e "\n\033[0;33m🔧 Создание резервной копии конфигурации...\033[0m"
+BACKUP_DIR="/usr/local/etc/xray/backup"
+mkdir -p "$BACKUP_DIR"
+BACKUP_FILE="$BACKUP_DIR/config_$(date +%Y%m%d_%H%M%S).json"
+cp "/usr/local/etc/xray/config.json" "$BACKUP_FILE"
+echo -e "\033[0;32m✅ Резервная копия создана: $BACKUP_FILE\033[0m"
+
+# Остановка службы
+echo -e "\n\033[0;33m⏹️  Остановка службы Xray...\033[0m"
+systemctl stop xray
+
+# Обновление
+echo -e "\n\033[0;33m⬇️  Загрузка и установка новой версии...\033[0m"
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
+
+# Проверка установки
+if ! command -v xray &> /dev/null; then
+    echo -e "\033[0;31m❌ Ошибка: xray не установлен после обновления.\033[0m"
+    echo "Восстанавливаем из резервной копии..."
+    cp "$BACKUP_FILE" "/usr/local/etc/xray/config.json"
+    systemctl start xray
+    exit 1
+fi
+
+# Проверка конфигурации
+echo -e "\n\033[0;33m🔍 Проверка конфигурации...\033[0m"
+if ! xray check; then
+    echo -e "\033[0;31m❌ Ошибка в конфигурации после обновления.\033[0m"
+    echo "Восстанавливаем из резервной копии..."
+    cp "$BACKUP_FILE" "/usr/local/etc/xray/config.json"
+    systemctl start xray
+    exit 1
+fi
+
+# Запуск службы
+echo -e "\n\033[0;33m▶️  Запуск службы Xray...\033[0m"
+systemctl daemon-reload
+systemctl start xray
+
+# Проверка работы
+sleep 3
+if ! ss -tuln | grep -q ':443 '; then
+    echo -e "\033[0;31m❌ Критическая ошибка: Xray не слушает порт 443 после обновления.\033[0m"
+    echo "Восстанавливаем из резервной копии и перезапускаем..."
+    cp "$BACKUP_FILE" "/usr/local/etc/xray/config.json"
+    systemctl restart xray
+    exit 1
+fi
+
+echo -e "\n\033[0;32m✅ Xray успешно обновлен до версии v$LATEST_VER!\033[0m"
+echo -e "\033[0;33mРезервная копия сохранена: $BACKUP_FILE\033[0m"
+EOF
+chmod +x /usr/local/bin/auto-update
+
+# === 7. Добавление команды для проверки обновлений в cron ===
+(crontab -l 2>/dev/null; echo "0 3 * * * /usr/local/bin/auto-update >/dev/null 2>&1") | crontab -
+
+# === Остальные команды управления ===
+cat > /usr/local/bin/listuser <<'EOF'
+#!/bin/bash
+FILE="/usr/local/etc/xray/.users"
+if [[ ! -f "$FILE" ]] || [[ ! -s "$FILE" ]]; then
+    echo "Нет созданных пользователей."
+else
+    echo "Список пользователей:"
+    awk -F: '{print NR ". " $1}' "$FILE"
+fi
+EOF
+chmod +x /usr/local/bin/listuser
+
+cat > /usr/local/bin/sharelink <<'EOF'
+#!/bin/bash
+CONF_DIR="/usr/local/etc/xray"
+USERS="$CONF_DIR/.users"
+if [[ ! -s "$USERS" ]]; then
+    echo "Нет пользователей."
+    exit 1
+fi
+echo "Выберите пользователя:"
+awk -F: '{print NR ". " $1}' "$USERS"
+read -p "Номер: " num
+total=$(wc -l < "$USERS")
+if ! [[ "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
+    echo "❌ Неверный номер."
+    exit 1
+fi
+name=$(sed -n "${num}p" "$USERS" | cut -d: -f1)
+/usr/local/bin/sharelink_by_name "$name"
+EOF
+chmod +x /usr/local/bin/sharelink
+
+cat > /usr/local/bin/mainuser <<'EOF'
+#!/bin/bash
+/usr/local/bin/sharelink_by_name "main"
+EOF
+chmod +x /usr/local/bin/mainuser
+
+cat > /usr/local/bin/update <<'EOF'
+#!/bin/bash
+echo "Обновление Xray..."
+systemctl stop xray
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
+systemctl daemon-reload
+systemctl restart xray
+echo "✅ Xray обновлён."
+EOF
+chmod +x /usr/local/bin/update
+
+cat > /usr/local/bin/openssh <<'EOF'
+#!/bin/bash
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+echo -e "${YELLOW}🔒 Порт 22 закрыт по умолчанию для безопасности.${NC}"
+echo
+echo -e "${YELLOW}⚠️  ВАЖНО: нужно указать именно ваш ВНЕШНИЙ (публичный) IPv4-адрес!${NC}"
+echo -e "   Это НЕ адрес вида 192.168.x.x, 10.x.x.x или IP вашего VPS."
+echo
+echo -e "   Узнайте свой внешний IP на одном из сайтов:"
+echo -e "     • https://myip.ru/"
+echo -e "     • https://2ip.ru/"
+echo -e "     • https://www.dnsleaktest.com/"
+echo
+read -p "Введите ваш внешний IP-адрес: " USER_IP
+if [[ ! "$USER_IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+    echo -e "${RED}❌ Неверный формат IP-адреса.${NC}"
+    exit 1
+fi
+IFS='.' read -r a b c d <<< "$USER_IP"
+if (( a > 255 || b > 255 || c > 255 || d > 255 )); then
+    echo -e "${RED}❌ Неверный IP-адрес (числа должны быть ≤ 255).${NC}"
+    exit 1
+fi
+if [[ "$USER_IP" =~ ^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[01])) ]]; then
+    echo -e "${RED}⚠️  Внимание: вы ввели приватный IP!${NC}"
+    echo -e "${RED}   Используйте внешний IP с myip.ru.${NC}"
+    exit 1
+fi
+if ! command -v fail2ban-client &> /dev/null; then
+    echo -e "${GREEN}Установка fail2ban для защиты от брутфорса...${NC}"
+    apt install -y fail2ban
+    systemctl enable --now fail2ban
+fi
+if ufw status | grep -q "ALLOW IN.*$USER_IP.*22"; then
+    echo -e "${GREEN}✅ Правило для $USER_IP уже существует.${NC}"
+else
+    ufw allow from "$USER_IP" to any port 22
+    echo -e "${GREEN}✅ Доступ по SSH разрешён с $USER_IP.${NC}"
+fi
+echo -e "${YELLOW}💡 fail2ban активен: защищает от брутфорса по SSH.${NC}"
+EOF
+chmod +x /usr/local/bin/openssh
+
+# === help с полным списком команд ===
+cat > $HOME/help <<'EOF'
+Доступные команды:
+  mainuser    — показать ссылку и QR основного пользователя
+  listuser    — список всех клиентов
+  adduser     — создать нового пользователя (с безопасным обновлением конфигурации)
+  rmuser      — удалить пользователя (с подтверждением и резервной копией)
+  sharelink   — получить ссылку пользователя
+  status      — проверить состояние сервера (без сбора статистики)
+  update      — обновить ядро вручную
+  auto-update — проверить и установить обновления автоматически
+  openssh     — открыть SSH для вашего IP и включить защиту от брутфорса (устанавливает fail2ban)
+EOF
+
+# === Отключение постоянного хранения логов (только RAM) ===
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/00-volatile.conf <<EOF
+[Journal]
+Storage=volatile
+RuntimeMaxUse=32M
+EOF
+systemctl restart systemd-journald 2>/dev/null || true
+journalctl --vacuum-time=1s
+
+# === Финальный вывод ===
+clear
+echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
+LINK="vless://$UUID@$IP:443?security=reality&sni=www.cloudflare.com&fp=firefox&pbk=$REALITY_PUB_KEY&sid=$SHORT_ID&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
+echo
+echo "Ссылка для подключения:"
+echo
+echo "$LINK"
+echo
+echo "QR-код:"
+echo "$LINK" | qrencode -t ansiutf8 -s 1
+echo
+echo -e "${YELLOW}✨ Добавлены новые возможности:${NC}"
+echo -e "${GREEN}✓ Оптимизации ядра и сети для лучшей производительности${NC}"
+echo -e "${GREEN}✓ Надежное управление пользователями с резервными копиями${NC}"
+echo -e "${GREEN}✓ Команда 'status' для проверки состояния (без сбора статистики)${NC}"
+echo -e "${GREEN}✓ Автоматическая проверка обновлений (раз в 24 часа)${NC}"
+echo -e "${GREEN}✓ Усиленная безопасность и конфиденциальность${NC}"
+echo
+echo -e "${YELLOW}Для получения списка команд, выполните:${NC}"
+echo -e "${GREEN}       cat help${NC}"
+echo -e "${YELLOW}🔒 Порт 22 (SSH) закрыт фаерволом. Чтобы получить доступ, выполните:${NC}"
+echo -e "${GREEN}       openssh${NC}"
+echo -e "${YELLOW}   и укажите ваш внешний IP (например, с myip.ru).${NC}"
+echo -e "${YELLOW}💡 Включите «Use Remote DNS» в клиенте (Hiddify) и режим VPN!${NC}"
+echo -e "${YELLOW}🔍 Для проверки состояния выполните: status${NC}"
