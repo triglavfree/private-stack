@@ -75,11 +75,7 @@ REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^Password:/ {print $2}')
 SHORT_ID=$(openssl rand -hex 4)
 mkdir -p /usr/local/etc/xray
 
-# Перезагружаем systemd и запускаем Xray с новым конфигом
-systemctl daemon-reload
-systemctl enable --now xray
-
-# === Создание конфигурационных файлов ===
+# === Создание конфигурационных файлов ДО запуска службы ===
 cat > /usr/local/etc/xray/.keys <<EOF
 uuid: $UUID
 Private key: $REALITY_PRIV_KEY
@@ -135,7 +131,8 @@ EOF
 
 echo "main:$UUID:$SHORT_ID" > /usr/local/etc/xray/.users
 
-# === Запуск и проверка ===
+# === Запуск службы (используем официальный unit) ===
+systemctl daemon-reload
 systemctl enable --now xray
 sleep 3
 
@@ -274,22 +271,20 @@ cat > /usr/local/bin/mainuser <<'EOF'
 /usr/local/bin/sharelink_by_name "main"
 EOF
 
+# === Обновление без перезаписи unit ===
 cat > /usr/local/bin/update <<'EOF'
 #!/bin/bash
 echo "Обновление Xray..."
-# Останавливаем службу перед обновлением
 systemctl stop xray
-
-# Обновляем, НЕ трогая unit-файлы
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
-
-# Перезапускаем
 systemctl daemon-reload
 systemctl restart xray
 echo "✅ Xray обновлён."
+EOF
 
 chmod +x /usr/local/bin/{listuser,adduser,rmuser,sharelink,mainuser,update,sharelink_by_name}
 
+# === openssh ===
 cat > /usr/local/bin/openssh <<'EOF'
 #!/bin/bash
 RED='\033[0;31m'
@@ -337,6 +332,7 @@ EOF
 
 chmod +x /usr/local/bin/openssh
 
+# === help ===
 cat > $HOME/help <<'EOF'
 Доступные команды:
   mainuser    — показать ссылку и QR основного пользователя
