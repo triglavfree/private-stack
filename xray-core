@@ -68,11 +68,6 @@ SHORT_ID=$(openssl rand -hex 4)
 
 mkdir -p /usr/local/etc/xray
 
-# Сохраняем данные первого пользователя
-cat > /usr/local/etc/xray/.users <<EOF
-main:$UUID:$SHORT_ID
-EOF
-
 cat > /usr/local/etc/xray/.keys <<EOF
 uuid: $UUID
 Private key: $REALITY_PRIV_KEY
@@ -80,6 +75,7 @@ Password: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
 
+# ⚠️ ВАЖНО: добавлен "listen": "0.0.0.0"
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": {"loglevel": "warning"},
@@ -89,6 +85,7 @@ cat > /usr/local/etc/xray/config.json <<EOF
   },
   "inbounds": [{
     "port": 443,
+    "listen": "0.0.0.0",
     "protocol": "vless",
     "settings": {
       "clients": [{"id": "$UUID", "email": "main", "flow": "xtls-rprx-vision"}],
@@ -164,7 +161,6 @@ shortid=$(openssl rand -hex 4)
 
 echo "$name:$uuid:$shortid" >> "$USERS"
 
-# Обновляем config.json
 jq --argjson clients "$(awk -F: '{
     printf (NR==1 ? "[" : ",") "{\\"id\\":\\"" $2 "\\", \\"flow\\":\\"xtls-rprx-vision\\"}"
 } END { print "]" }' "$USERS")" \
@@ -200,7 +196,6 @@ sed -i "${num}d" "$USERS"
 
 if [[ ! -s "$USERS" ]]; then
     echo "⚠️ Последний пользователь удалён. Сервер не будет принимать подключения!"
-    # Оставляем хотя бы пустой массив
     jq '.inbounds[0].settings.clients = []' "$CONF_DIR/config.json" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
 else
     jq --argjson clients "$(awk -F: '{
@@ -241,7 +236,7 @@ echo "🔗 Ссылка для '$name':"
 echo "$link"
 echo
 echo "QR-код:"
-echo "$link" | qrencode -t ansiutf8
+echo "$link" | qrencode -t ansiutf8 -s 2
 EOF
 
 cat > /usr/local/bin/sharelink <<'EOF'
@@ -329,7 +324,6 @@ echo -e "${YELLOW}💡 fail2ban активен: защищает от брутф
 EOF
 chmod +x /usr/local/bin/openssh
 
-# help
 cat > $HOME/help <<'EOF'
 Доступные команды:
   mainuser    — показать ссылку и QR основного пользователя
@@ -341,7 +335,6 @@ cat > $HOME/help <<'EOF'
   openssh     — открыть SSH для вашего IP и включить защиту от брутфорса (устанавливает fail2ban)
 EOF
 
-# Финальный вывод
 clear
 echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
 MAIN_UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
