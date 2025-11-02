@@ -48,19 +48,38 @@ if ss -tuln | grep -q ':443 '; then
     echo -e "${RED}Порт 443 занят! Остановите другие сервисы (nginx, apache, sing-box).${NC}"
     exit 1
 fi
-# Установка Xray (только бинарник, игнорируем его unit)
+
+# Установка Xray
 echo -e "${GREEN}Установка Xray-core...${NC}"
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
 
-# Удаляем ВСЕ drop-in файлы, созданные установщиком
+if ! command -v xray &> /dev/null; then
+    echo -e "${RED}Ошибка: xray не установлен.${NC}"
+    exit 1
+fi
+
+# === Генерация ключей и переменных ===
+IP=$(curl -4 -s icanhazip.com)
+if [[ -z "$IP" ]]; then
+    echo -e "${RED}Не удалось определить IPv4.${NC}"
+    exit 1
+fi
+
+UUID=$(xray uuid)
+KEYPAIR=$(xray x25519)
+REALITY_PRIV_KEY=$(echo "$KEYPAIR" | awk '/^PrivateKey:/ {print $2}')
+REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^Password:/ {print $2}')
+SHORT_ID=$(openssl rand -hex 4)
+
+mkdir -p /usr/local/etc/xray
+
+# === УДАЛЯЕМ ВСЕ DROP-IN КАТАЛОГИ И UNIT-ФАЙЛЫ ОТ УСТАНОВЩИКА ===
 rm -rf /etc/systemd/system/xray.service.d/
 rm -rf /etc/systemd/system/xray@.service.d/
-
-# Удаляем unit-файлы, созданные установщиком
 rm -f /etc/systemd/system/xray.service
 rm -f /etc/systemd/system/xray@.service
 
-# Создаём свой unit-файл БЕЗ User=
+# === Создаём СВОЙ unit-файл БЕЗ User= (запуск от root) ===
 cat > /etc/systemd/system/xray.service <<'EOF'
 [Unit]
 Description=Xray Service
@@ -139,8 +158,8 @@ echo "main:$UUID:$SHORT_ID" > /usr/local/etc/xray/.users
 
 # === Запуск и проверка ===
 systemctl enable --now xray
-
 sleep 3
+
 if ! ss -tuln | grep -q ':443 '; then
     echo -e "${RED}❌ Критическая ошибка: Xray не слушает порт 443.${NC}"
     echo "Проверьте журнал службы:"
@@ -281,7 +300,13 @@ cat > /usr/local/bin/update <<'EOF'
 echo "Обновление Xray..."
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
 
-# Перезаписываем unit-файл и удаляем drop-in
+# Полная очистка от drop-in и старых unit
+rm -rf /etc/systemd/system/xray.service.d/
+rm -rf /etc/systemd/system/xray@.service.d/
+rm -f /etc/systemd/system/xray.service
+rm -f /etc/systemd/system/xray@.service
+
+# Пересоздаём свой unit
 cat > /etc/systemd/system/xray.service <<'INNEREOF'
 [Unit]
 Description=Xray Service
@@ -300,7 +325,6 @@ LimitNOFILE=1000000
 WantedBy=multi-user.target
 INNEREOF
 
-rm -f /etc/systemd/system/xray.service.d/10-donot_touch_single_conf.conf
 systemctl daemon-reload
 systemctl restart xray
 echo "✅ Xray обновлён."
