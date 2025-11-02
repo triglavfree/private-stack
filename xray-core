@@ -157,6 +157,7 @@ else
 fi
 EOF
 
+# === ИСПРАВЛЕННЫЙ adduser (через jq) ===
 cat > /usr/local/bin/adduser <<'EOF'
 #!/bin/bash
 set -e
@@ -174,18 +175,26 @@ fi
 uuid=$(xray uuid)
 shortid=$(openssl rand -hex 4)
 echo "$name:$uuid:$shortid" >> "$USERS"
-clients_json=$(awk -F: '{
-    gsub(/\\/,"\\\\",$2); gsub(/"/,"\\\"",$2)
-    printf (NR==1 ? "[" : ",") "{\\"id\\":\\"" $2 "\\", \\"flow\\":\\"xtls-rprx-vision\\"}"
-} END { print "]" }' "$USERS")
-jq --argjson clients "$clients_json" \
-'.inbounds[0].settings.clients = $clients' \
-"$CONF_DIR/config.json" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
+
+# Пересоздаём массив клиентов через jq
+jq '{
+  inbounds: [
+    (.inbounds[0] | .settings.clients = (
+      input | split("\n")[:-1] | map(select(length > 0)) | map(split(":")) | map({
+        id: .[1],
+        email: .[0],
+        flow: "xtls-rprx-vision"
+      })
+    ))
+  ]
+}' "$CONF_DIR/config.json" < "$USERS" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
+
 systemctl restart xray
 echo "✅ Пользователь '$name' добавлен."
 /usr/local/bin/sharelink_by_name "$name"
 EOF
 
+# === ИСПРАВЛЕННЫЙ rmuser (через jq) ===
 cat > /usr/local/bin/rmuser <<'EOF'
 #!/bin/bash
 CONF_DIR="/usr/local/etc/xray"
@@ -204,17 +213,23 @@ if ! [[ "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
 fi
 name=$(sed -n "${num}p" "$USERS" | cut -d: -f1)
 sed -i "${num}d" "$USERS"
+
 if [[ ! -s "$USERS" ]]; then
     jq '.inbounds[0].settings.clients = []' "$CONF_DIR/config.json" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
 else
-    clients_json=$(awk -F: '{
-        gsub(/\\/,"\\\\",$2); gsub(/"/,"\\\"",$2)
-        printf (NR==1 ? "[" : ",") "{\\"id\\":\\"" $2 "\\", \\"flow\\":\\"xtls-rprx-vision\\"}"
-    } END { print "]" }' "$USERS")
-    jq --argjson clients "$clients_json" \
-    '.inbounds[0].settings.clients = $clients' \
-    "$CONF_DIR/config.json" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
+    jq '{
+      inbounds: [
+        (.inbounds[0] | .settings.clients = (
+          input | split("\n")[:-1] | map(select(length > 0)) | map(split(":")) | map({
+            id: .[1],
+            email: .[0],
+            flow: "xtls-rprx-vision"
+          })
+        ))
+      ]
+    }' "$CONF_DIR/config.json" < "$USERS" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
 fi
+
 systemctl restart xray
 echo "✅ Пользователь '$name' удалён."
 EOF
