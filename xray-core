@@ -84,7 +84,7 @@ Password: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
 
-# Конфиг с listen: "0.0.0.0"
+# Конфиг xray"
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": {"loglevel": "warning"},
@@ -132,7 +132,7 @@ cat > /usr/local/etc/xray/config.json <<EOF
 }
 EOF
 
-# Создаём файл пользователей — ГАРАНТИРОВАННО
+# Создаём файл пользователей
 echo "main:$UUID:$SHORT_ID" > /usr/local/etc/xray/.users
 
 systemctl daemon-reload
@@ -293,7 +293,6 @@ EOF
 
 chmod +x /usr/local/bin/{listuser,adduser,rmuser,sharelink,mainuser,update,sharelink_by_name}
 
-# === openssh ===
 cat > /usr/local/bin/openssh <<'EOF'
 #!/bin/bash
 RED='\033[0;31m'
@@ -346,7 +345,7 @@ cat > $HOME/help <<'EOF'
   listuser    — список всех клиентов
   adduser     — создать нового пользователя
   rmuser      — удалить пользователя
-  sharelink   — получить ссылку по номеру
+  sharelink   — получить ссылку пользователя
   update      — обновить ядро
   openssh     — открыть SSH для вашего IP и включить защиту от брутфорса (устанавливает fail2ban)
 EOF
@@ -363,7 +362,8 @@ echo
 echo "QR-код:"
 echo "$LINK" | qrencode -t ansiutf8 -s 1
 echo
-echo -e "${GREEN} Введите cat help для списка команд${NC}"
+echo -e "${YELLOW}Для получения списка команд, выполните:${NC}"
+echo -e "${GREEN}       cat help${NC}"
 echo -e "${YELLOW}🔒 Порт 22 (SSH) закрыт фаерволом. Чтобы получить доступ, выполните:${NC}"
 echo -e "${GREEN}       openssh${NC}"
 echo -e "${YELLOW}   и укажите ваш внешний IP (например, с myip.ru).${NC}"
