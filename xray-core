@@ -49,7 +49,7 @@ if ss -tuln | grep -q ':443 '; then
     exit 1
 fi
 
-# Установка Xray
+# Установка Xray-core...
 echo -e "${GREEN}Установка Xray-core...${NC}"
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --no-update-service
 
@@ -58,28 +58,30 @@ if ! command -v xray &> /dev/null; then
     exit 1
 fi
 
-# === Генерация ключей и переменных ===
+# Остановим службу, если она запущена установщиком
+systemctl stop xray 2>/dev/null || true
+systemctl disable xray 2>/dev/null || true
+
+# Полностью удаляем всё, что создал установщик
+rm -f /etc/systemd/system/xray.service
+rm -f /etc/systemd/system/xray@.service
+rm -rf /etc/systemd/system/xray.service.d/
+rm -rf /etc/systemd/system/xray@.service.d/
+
+# Генерация ключей и переменных
 IP=$(curl -4 -s icanhazip.com)
 if [[ -z "$IP" ]]; then
     echo -e "${RED}Не удалось определить IPv4.${NC}"
     exit 1
 fi
-
 UUID=$(xray uuid)
 KEYPAIR=$(xray x25519)
 REALITY_PRIV_KEY=$(echo "$KEYPAIR" | awk '/^PrivateKey:/ {print $2}')
 REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^Password:/ {print $2}')
 SHORT_ID=$(openssl rand -hex 4)
-
 mkdir -p /usr/local/etc/xray
 
-# === УДАЛЯЕМ ВСЕ DROP-IN КАТАЛОГИ И UNIT-ФАЙЛЫ ОТ УСТАНОВЩИКА ===
-rm -rf /etc/systemd/system/xray.service.d/
-rm -rf /etc/systemd/system/xray@.service.d/
-rm -f /etc/systemd/system/xray.service
-rm -f /etc/systemd/system/xray@.service
-
-# === Создаём СВОЙ unit-файл БЕЗ User= (запуск от root) ===
+# Создаём свой unit-файл БЕЗ User=
 cat > /etc/systemd/system/xray.service <<'EOF'
 [Unit]
 Description=Xray Service
