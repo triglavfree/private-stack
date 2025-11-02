@@ -10,12 +10,19 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# === Очистка логов и отключение их хранения ===
+echo -e "${GREEN}Очистка системных логов и отключение постоянного хранения...${NC}"
+journalctl --vacuum-time=1s
+systemctl mask systemd-journald.service systemd-journald.socket
+mkdir -p /var/log/journal
+mount -t tmpfs tmpfs /var/log/journal
+
 create_swap_if_needed() {
     TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
     TOTAL_MEM_GB=$((TOTAL_MEM_KB / 1024 / 1024))
     if [ "$TOTAL_MEM_GB" -le 1 ]; then
         if ! swapon --show | grep -q '/swapfile'; then
-            echo -e "${GREEN}Создание swap-файла 2 ГБ (RAM ≤ 1 ГБ)...${NC}"
+            echo -e "${GREEN}Создание swap-файла 2 ГБ...${NC}"
             fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
             chmod 600 /swapfile
             mkswap /swapfile
@@ -41,6 +48,12 @@ apt install -y ufw
 ufw allow 443/tcp
 ufw --force enable
 
+# Проверка занятости порта 443
+if ss -tuln | grep -q ':443 '; then
+    echo -e "${RED}Порт 443 занят! Остановите другие сервисы (nginx, apache, sing-box).${NC}"
+    exit 1
+fi
+
 # Установка Xray
 echo -e "${GREEN}Установка Xray-core...${NC}"
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
@@ -49,14 +62,9 @@ if ! command -v xray &> /dev/null; then
     exit 1
 fi
 
-IP=$(curl -4 -s icanhazip.com || curl -6 -s icanhazip.com)
+IP=$(curl -4 -s icanhazip.com)
 if [[ -z "$IP" ]]; then
-    echo -e "${RED}Не удалось определить IP.${NC}"
-    exit 1
-fi
-
-if ss -tuln | grep -q ':443 '; then
-    echo -e "${RED}Порт 443 занят! Остановите другие сервисы.${NC}"
+    echo -e "${RED}Не удалось определить IPv4.${NC}"
     exit 1
 fi
 
@@ -68,6 +76,7 @@ SHORT_ID=$(openssl rand -hex 4)
 
 mkdir -p /usr/local/etc/xray
 
+# Сохраняем ключи
 cat > /usr/local/etc/xray/.keys <<EOF
 uuid: $UUID
 Private key: $REALITY_PRIV_KEY
@@ -75,7 +84,7 @@ Password: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
 
-# ⚠️ ВАЖНО: добавлен "listen": "0.0.0.0"
+# Конфиг с listen: "0.0.0.0"
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": {"loglevel": "warning"},
@@ -123,10 +132,13 @@ cat > /usr/local/etc/xray/config.json <<EOF
 }
 EOF
 
+# Создаём файл пользователей — ГАРАНТИРОВАННО
+echo "main:$UUID:$SHORT_ID" > /usr/local/etc/xray/.users
+
 systemctl daemon-reload
 systemctl enable --now xray
 
-# === Команды управления пользователями ===
+# === Команды управления ===
 
 cat > /usr/local/bin/listuser <<'EOF'
 #!/bin/bash
@@ -135,7 +147,7 @@ if [[ ! -f "$FILE" ]] || [[ ! -s "$FILE" ]]; then
     echo "Нет созданных пользователей."
 else
     echo "Список пользователей:"
-    awk -F: '{print NR ". " $1 " (UUID: " $2 ")"}' "$FILE"
+    awk -F: '{print NR ". " $1}' "$FILE"
 fi
 EOF
 
@@ -158,12 +170,15 @@ fi
 
 uuid=$(xray uuid)
 shortid=$(openssl rand -hex 4)
-
 echo "$name:$uuid:$shortid" >> "$USERS"
 
-jq --argjson clients "$(awk -F: '{
+# Безопасная генерация JSON
+clients_json=$(awk -F: '{
+    gsub(/\\/,"\\\\",$2); gsub(/"/,"\\\"",$2)
     printf (NR==1 ? "[" : ",") "{\\"id\\":\\"" $2 "\\", \\"flow\\":\\"xtls-rprx-vision\\"}"
-} END { print "]" }' "$USERS")" \
+} END { print "]" }' "$USERS")
+
+jq --argjson clients "$clients_json" \
 '.inbounds[0].settings.clients = $clients' \
 "$CONF_DIR/config.json" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
 
@@ -195,12 +210,13 @@ name=$(sed -n "${num}p" "$USERS" | cut -d: -f1)
 sed -i "${num}d" "$USERS"
 
 if [[ ! -s "$USERS" ]]; then
-    echo "⚠️ Последний пользователь удалён. Сервер не будет принимать подключения!"
     jq '.inbounds[0].settings.clients = []' "$CONF_DIR/config.json" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
 else
-    jq --argjson clients "$(awk -F: '{
+    clients_json=$(awk -F: '{
+        gsub(/\\/,"\\\\",$2); gsub(/"/,"\\\"",$2)
         printf (NR==1 ? "[" : ",") "{\\"id\\":\\"" $2 "\\", \\"flow\\":\\"xtls-rprx-vision\\"}"
-    } END { print "]" }' "$USERS")" \
+    } END { print "]" }' "$USERS")
+    jq --argjson clients "$clients_json" \
     '.inbounds[0].settings.clients = $clients' \
     "$CONF_DIR/config.json" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
 fi
@@ -335,23 +351,17 @@ cat > $HOME/help <<'EOF'
   openssh     — открыть SSH для вашего IP и включить защиту от брутфорса (устанавливает fail2ban)
 EOF
 
+# === Финальный вывод ===
 clear
 echo -e "${GREEN}✅ Установка Xray (REALITY + Vision) завершена!${NC}"
-MAIN_UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/xray/config.json)
-pbk=$(awk -F': ' '/Password/ {print $2}' /usr/local/etc/xray/.keys)
-sid=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/xray/.keys)
-sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
-ip=$(curl -4 -s icanhazip.com || curl -6 -s icanhazip.com)
-if [[ -n "$ip" ]]; then
-    LINK="vless://$MAIN_UUID@$ip:443?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
-    echo
-    echo "Ссылка для подключения:"
-    echo
-    echo "$LINK"
-    echo
-    echo "QR-код:"
-    echo "$LINK" | qrencode -t ansiutf8 -s 1
-fi
+LINK="vless://$UUID@$IP:443?security=reality&sni=www.cloudflare.com&fp=firefox&pbk=$REALITY_PUB_KEY&sid=$SHORT_ID&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
+echo
+echo "Ссылка для подключения:"
+echo
+echo "$LINK"
+echo
+echo "QR-код:"
+echo "$LINK" | qrencode -t ansiutf8 -s 1
 echo
 echo -e "${GREEN} Введите cat help для списка команд${NC}"
 echo -e "${YELLOW}🔒 Порт 22 (SSH) закрыт фаерволом. Чтобы получить доступ, выполните:${NC}"
