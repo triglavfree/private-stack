@@ -61,22 +61,27 @@ setup_swap_if_needed() {
 # ВЫЗЫВАЕМ ФУНКЦИЮ создания swap
 setup_swap_if_needed
 
-# Создаём директории ДО установки
+# Создаём директории и минимальный конфиг
 mkdir -p /usr/local/etc/xray
-
-# Создаём ВРЕМЕННЫЙ минимальный конфиг (чтобы сервис запустился)
 cat > /usr/local/etc/xray/config.json << EOF
-{
-    "log": {"loglevel": "warning"},
-    "inbounds": [],
-    "outbounds": [{"protocol": "freedom", "tag": "direct"}]
-}
+{"log":{"loglevel":"warning"},"inbounds":[],"outbounds":[{"protocol":"freedom","tag":"direct"}]}
 EOF
+
+# Отключаем systemd, чтобы установщик не пытался запустить сервис
+systemctl stop xray 2>/dev/null || true
+systemctl disable xray 2>/dev/null || true
+rm -f /etc/systemd/system/xray.service
 
 # Устанавливаем Xray с правильными флагами
 bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --without-logfiles --no-update-service
 
-# ГЕНЕРИРУЕМ КЛЮЧИ ПОСЛЕ УСТАНОВКИ XRAY (ТОЛЬКО ОДИН РАЗ!)
+# ПРОВЕРЯЕМ, что xray установлен и работает
+if ! /usr/local/bin/xray version >/dev/null 2>&1; then
+    echo "Ошибка: Xray не установлен корректно"
+    exit 1
+fi
+
+# ГЕНЕРИРУЕМ КЛЮЧИ ТОЛЬКО ПОСЛЕ УСПЕШНОЙ УСТАНОВКИ
 rm -f /usr/local/etc/xray/.keys
 {
   echo "shortsid: $(openssl rand -hex 8)"
