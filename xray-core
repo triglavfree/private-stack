@@ -57,7 +57,22 @@ if ! command -v xray &> /dev/null; then
     exit 1
 fi
 
-# === ВАЖНО: Перезаписываем unit-файл, созданный официальным установщиком ===
+# === Генерация ключей и переменных ===
+IP=$(curl -4 -s icanhazip.com)
+if [[ -z "$IP" ]]; then
+    echo -e "${RED}Не удалось определить IPv4.${NC}"
+    exit 1
+fi
+
+UUID=$(xray uuid)
+KEYPAIR=$(xray x25519)
+REALITY_PRIV_KEY=$(echo "$KEYPAIR" | awk '/^PrivateKey:/ {print $2}')
+REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^Password:/ {print $2}')
+SHORT_ID=$(openssl rand -hex 4)
+
+mkdir -p /usr/local/etc/xray
+
+# === Перезапись unit-файла (единожды) ===
 cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
@@ -78,7 +93,7 @@ EOF
 
 systemctl daemon-reload
 
-# Сохраняем ключи
+# === Создание конфигурационных файлов ===
 cat > /usr/local/etc/xray/.keys <<EOF
 uuid: $UUID
 Private key: $REALITY_PRIV_KEY
@@ -86,7 +101,6 @@ Password: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
 
-# Конфиг xray (БЕЗ "show": false!)
 cat > /usr/local/etc/xray/config.json <<EOF
 {
   "log": {"loglevel": "warning"},
@@ -133,32 +147,11 @@ cat > /usr/local/etc/xray/config.json <<EOF
 }
 EOF
 
-# Создаём файл пользователей
 echo "main:$UUID:$SHORT_ID" > /usr/local/etc/xray/.users
 
-# Unit-файл БЕЗ User=nobody (запуск от root)
-cat > /etc/systemd/system/xray.service <<EOF
-[Unit]
-Description=Xray Service
-Documentation=https://github.com/xtls
-After=network.target nss-lookup.target
-
-[Service]
-Type=exec
-ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
-Restart=on-failure
-RestartPreventExitStatus=23
-LimitNPROC=10000
-LimitNOFILE=1000000
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
+# === Запуск и проверка ===
 systemctl enable --now xray
 
-# === Проверка: слушает ли Xray порт 443? ===
 sleep 3
 if ! ss -tuln | grep -q ':443 '; then
     echo -e "${RED}❌ Критическая ошибка: Xray не слушает порт 443.${NC}"
