@@ -64,6 +64,9 @@ fi
 echo -e "${GREEN}Установка Xray-core...${NC}"
 bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 
+# === ИСПРАВЛЕНИЕ: СОЗДАЕМ ДИРЕКТОРИЮ ЕСЛИ ЕЁ НЕТ ===
+mkdir -p /usr/local/etc/xray
+
 # Генерация ключей
 [ -f /usr/local/etc/xray/.keys ] && rm /usr/local/etc/xray/.keys
 touch /usr/local/etc/xray/.keys
