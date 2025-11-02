@@ -24,7 +24,7 @@ curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-b
 - Сгенерирует криптостойкие ключи **REALITY X25519** и случайный `shortId`
 - Настроит **VLESS + REALITY + Vision** с маскировкой под `www.cloudflare.com`
 - Настроит DNS через **Cloudflare DoH** `https://1.1.1.1/dns-query`
-- оздаст пользователя `main` и сохранит его данные
+- Создаст пользователя `main` и сохранит его данные
 - Удалит drop-in файл `systemd`, мешающий работе на **Ubuntu 24.04**
 - Запустит службу **Xray** и проверит, что порт **443** слушается
 - Отключит постоянное хранение системных логов (только **RAM**, очистка при перезагрузке)
