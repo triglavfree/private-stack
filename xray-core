@@ -17,7 +17,7 @@ else
 fi
 
 # === 3. Установка Xray ===
-bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --without-logfiles
+bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install --without-logfiles --no-update-service
 
 # Удаляем старый .keys (если есть) и создаём новый
 [ -f /usr/local/etc/xray/.keys ] && rm /usr/local/etc/xray/.keys
