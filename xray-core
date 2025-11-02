@@ -236,7 +236,7 @@ echo "🔗 Ссылка для '$name':"
 echo "$link"
 echo
 echo "QR-код:"
-echo "$link" | qrencode -t ansiutf8 -s 2
+echo "$link" | qrencode -t ansiutf8 -s 1
 EOF
 
 cat > /usr/local/bin/sharelink <<'EOF'
@@ -350,7 +350,7 @@ if [[ -n "$ip" ]]; then
     echo "$LINK"
     echo
     echo "QR-код:"
-    echo "$LINK" | qrencode -t ansiutf8 -s 2
+    echo "$LINK" | qrencode -t ansiutf8 -s 1
 fi
 echo
 echo -e "${GREEN} Введите cat help для списка команд${NC}"
