@@ -28,6 +28,7 @@ create_swap_if_needed() {
         fi
     fi
 }
+
 create_swap_if_needed
 
 echo -e "${GREEN}Обновление системы...${NC}"
@@ -81,6 +82,12 @@ REALITY_PUB_KEY=$(echo "$KEYPAIR" | awk '/^public key:/ {print $3}')
 SHORT_ID=$(openssl rand -hex 4)
 
 mkdir -p /usr/local/etc/sing-box
+
+# Сохраняем первого пользователя
+cat > /usr/local/etc/sing-box/.users <<EOF
+main:$UUID:$SHORT_ID
+EOF
+
 cat > /usr/local/etc/sing-box/.keys <<EOF
 uuid: $UUID
 private key: $REALITY_PRIV_KEY
@@ -88,7 +95,6 @@ public key: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
 
-# Конфигурация с www.cloudflare.com
 cat > /usr/local/etc/sing-box/config.json <<EOF
 {
   "log": {"level": "warn"},
@@ -125,17 +131,174 @@ EOF
 systemctl daemon-reload
 systemctl enable --now sing-box
 
-# Утилиты (listuser, adduser, rmuser, sharelink, update, mainuser)
-# ... (код без изменений)
+# === Команды управления пользователями ===
 
-# Команда openssh — как в xray-core
+cat > /usr/local/bin/listuser <<'EOF'
+#!/bin/bash
+FILE="/usr/local/etc/sing-box/.users"
+if [[ ! -f "$FILE" ]] || [[ ! -s "$FILE" ]]; then
+    echo "Нет созданных пользователей."
+else
+    echo "Список пользователей:"
+    awk -F: '{print NR ". " $1 " (UUID: " $2 ")"}' "$FILE"
+fi
+EOF
+
+cat > /usr/local/bin/adduser <<'EOF'
+#!/bin/bash
+set -e
+CONF_DIR="/usr/local/etc/sing-box"
+USERS="$CONF_DIR/.users"
+
+read -p "Введите имя нового пользователя (без пробелов): " name
+if [[ -z "$name" ]]; then
+    echo "❌ Имя не может быть пустым."
+    exit 1
+fi
+
+if grep -q "^$name:" "$USERS" 2>/dev/null; then
+    echo "❌ Пользователь '$name' уже существует."
+    exit 1
+fi
+
+uuid=$(uuidgen)
+shortid=$(openssl rand -hex 4)
+
+echo "$name:$uuid:$shortid" >> "$USERS"
+
+jq --argjson users "$(awk -F: '{
+    printf (NR==1 ? "[" : ",") "{\\"uuid\\":\\"" $2 "\\", \\"flow\\":\\"xtls-rprx-vision\\"}"
+} END { print "]" }' "$USERS")" \
+'.inbounds[0].users = $users' \
+"$CONF_DIR/config.json" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
+
+systemctl restart sing-box
+echo "✅ Пользователь '$name' добавлен."
+/usr/local/bin/sharelink_by_name "$name"
+EOF
+
+cat > /usr/local/bin/rmuser <<'EOF'
+#!/bin/bash
+CONF_DIR="/usr/local/etc/sing-box"
+USERS="$CONF_DIR/.users"
+
+if [[ ! -s "$USERS" ]]; then
+    echo "Нет пользователей для удаления."
+    exit 1
+fi
+
+echo "Выберите пользователя для удаления:"
+awk -F: '{print NR ". " $1}' "$USERS"
+read -p "Номер: " num
+total=$(wc -l < "$USERS")
+if ! [[ "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
+    echo "❌ Неверный номер."
+    exit 1
+fi
+
+name=$(sed -n "${num}p" "$USERS" | cut -d: -f1)
+sed -i "${num}d" "$USERS"
+
+if [[ ! -s "$USERS" ]]; then
+    echo "⚠️ Последний пользователь удалён. Сервер не будет принимать подключения!"
+    jq '.inbounds[0].users = []' "$CONF_DIR/config.json" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
+else
+    jq --argjson users "$(awk -F: '{
+        printf (NR==1 ? "[" : ",") "{\\"uuid\\":\\"" $2 "\\", \\"flow\\":\\"xtls-rprx-vision\\"}"
+    } END { print "]" }' "$USERS")" \
+    '.inbounds[0].users = $users' \
+    "$CONF_DIR/config.json" > /tmp/config.tmp && mv /tmp/config.tmp "$CONF_DIR/config.json"
+fi
+
+systemctl restart sing-box
+echo "✅ Пользователь '$name' удалён."
+EOF
+
+cat > /usr/local/bin/sharelink_by_name <<'EOF'
+#!/bin/bash
+name="$1"
+if [[ -z "$name" ]]; then
+    echo "Использование: $0 <имя_пользователя>"
+    exit 1
+fi
+
+CONF_DIR="/usr/local/etc/sing-box"
+line=$(grep "^$name:" "$CONF_DIR/.users")
+if [[ -z "$line" ]]; then
+    echo "❌ Пользователь '$name' не найден."
+    exit 1
+fi
+
+uuid=$(echo "$line" | cut -d: -f2)
+sid=$(echo "$line" | cut -d: -f3)
+pbk=$(awk -F': ' '/public key:/ {print $2}' "$CONF_DIR/.keys")
+ip=$(curl -4 -s icanhazip.com)
+sni="www.cloudflare.com"
+
+link="vless://$uuid@$ip:443?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$name"
+echo
+echo "🔗 Ссылка для '$name':"
+echo "$link"
+echo
+echo "QR-код:"
+echo "$link" | qrencode -t ansiutf8
+EOF
+
+cat > /usr/local/bin/sharelink <<'EOF'
+#!/bin/bash
+CONF_DIR="/usr/local/etc/sing-box"
+USERS="$CONF_DIR/.users"
+
+if [[ ! -s "$USERS" ]]; then
+    echo "Нет пользователей."
+    exit 1
+fi
+
+echo "Выберите пользователя:"
+awk -F: '{print NR ". " $1}' "$USERS"
+read -p "Номер: " num
+total=$(wc -l < "$USERS")
+if ! [[ "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
+    echo "❌ Неверный номер."
+    exit 1
+fi
+
+name=$(sed -n "${num}p" "$USERS" | cut -d: -f1)
+/usr/local/bin/sharelink_by_name "$name"
+EOF
+
+cat > /usr/local/bin/mainuser <<'EOF'
+#!/bin/bash
+/usr/local/bin/sharelink_by_name "main"
+EOF
+
+cat > /usr/local/bin/update <<'EOF'
+#!/bin/bash
+echo "Обновление sing-box..."
+LATEST=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r ".tag_name")
+ARCH=$(dpkg --print-architecture)
+case "$ARCH" in
+  amd64) SUFFIX="linux-amd64" ;;
+  arm64) SUFFIX="linux-arm64" ;;
+  *) echo "Архитектура не поддерживается."; exit 1 ;;
+esac
+URL="https://github.com/SagerNet/sing-box/releases/download/${LATEST}/sing-box-${LATEST#v}-${SUFFIX}.tar.gz"
+curl -L "$URL" | tar xz -C /tmp
+mv "/tmp/sing-box-${LATEST#v}-${SUFFIX}/sing-box" /usr/local/bin/sing-box
+rm -rf "/tmp/sing-box-${LATEST#v}-${SUFFIX}"
+systemctl restart sing-box
+echo "✅ sing-box обновлён."
+EOF
+
+chmod +x /usr/local/bin/{listuser,adduser,rmuser,sharelink,mainuser,update,sharelink_by_name}
+
+# === openssh ===
 cat > /usr/local/bin/openssh <<'EOF'
 #!/bin/bash
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
-
 echo -e "${YELLOW}🔒 Порт 22 закрыт по умолчанию для безопасности.${NC}"
 echo
 echo -e "${YELLOW}⚠️  ВАЖНО: нужно указать именно ваш ВНЕШНИЙ (публичный) IPv4-адрес!${NC}"
@@ -147,41 +310,36 @@ echo -e "     • https://2ip.ru/"
 echo -e "     • https://www.dnsleaktest.com/"
 echo
 read -p "Введите ваш внешний IP-адрес: " USER_IP
-
 if [[ ! "$USER_IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
     echo -e "${RED}❌ Неверный формат IP-адреса.${NC}"
     exit 1
 fi
-
 IFS='.' read -r a b c d <<< "$USER_IP"
 if (( a > 255 || b > 255 || c > 255 || d > 255 )); then
     echo -e "${RED}❌ Неверный IP-адрес (числа должны быть ≤ 255).${NC}"
     exit 1
 fi
-
 if [[ "$USER_IP" =~ ^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[01])) ]]; then
     echo -e "${RED}⚠️  Внимание: вы ввели приватный IP!${NC}"
     echo -e "${RED}   Используйте внешний IP с myip.ru.${NC}"
     exit 1
 fi
-
 if ! command -v fail2ban-client &> /dev/null; then
     echo -e "${GREEN}Установка fail2ban для защиты от брутфорса...${NC}"
     apt install -y fail2ban
     systemctl enable --now fail2ban
 fi
-
 if ufw status | grep -q "ALLOW IN.*$USER_IP.*22"; then
     echo -e "${GREEN}✅ Правило для $USER_IP уже существует.${NC}"
 else
     ufw allow from "$USER_IP" to any port 22
     echo -e "${GREEN}✅ Доступ по SSH разрешён с $USER_IP.${NC}"
 fi
-
 echo -e "${YELLOW}💡 fail2ban активен: защищает от брутфорса по SSH.${NC}"
 EOF
 chmod +x /usr/local/bin/openssh
 
+# help
 cat > $HOME/help <<'EOF'
 Доступные команды:
   mainuser    — показать ссылку и QR основного пользователя
@@ -196,12 +354,10 @@ EOF
 # Финальный вывод
 clear
 echo -e "${GREEN}✅ Установка sing-box (REALITY + Vision) завершена!${NC}"
-
 UUID=$(awk -F': ' '/uuid/ {print $2}' /usr/local/etc/sing-box/.keys)
 PBK=$(awk -F': ' '/public key/ {print $2}' /usr/local/etc/sing-box/.keys)
 SID=$(awk -F': ' '/shortsid/ {print $2}' /usr/local/etc/sing-box/.keys)
 IP=$(curl -4 -s icanhazip.com)
-
 if [[ -n "$IP" ]]; then
     LINK="vless://$UUID@$IP:443?security=reality&sni=www.cloudflare.com&fp=firefox&pbk=$PBK&sid=$SID&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
     echo "Ссылка для подключения:"
@@ -211,7 +367,6 @@ if [[ -n "$IP" ]]; then
     echo "QR-код:"
     echo "$LINK" | qrencode -t ansiutf8
 fi
-
 echo
 echo -e "${GREEN} Введите cat help для списка команд${NC}"
 echo -e "${YELLOW}🔒 Порт 22 (SSH) закрыт фаерволом. Чтобы получить доступ, выполните:${NC}"
