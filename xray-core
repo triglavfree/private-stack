@@ -10,16 +10,12 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# === Отключение постоянного хранения логов (только RAM) ===
-mkdir -p /etc/systemd/journald.conf.d
-cat > /etc/systemd/journald.conf.d/00-volatile.conf <<EOF
-[Journal]
-Storage=volatile
-RuntimeMaxUse=32M
-EOF
-systemctl restart systemd-journald 2>/dev/null || true
-journalctl --vacuum-time=1s
+# Обновление системы
+echo -e "${GREEN}Обновление системы...${NC}"
+apt update && apt upgrade -y
+apt install -y curl wget gnupg qrencode jq
 
+# Создание swap
 create_swap_if_needed() {
     TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
     TOTAL_MEM_GB=$((TOTAL_MEM_KB / 1024 / 1024))
@@ -40,10 +36,6 @@ create_swap_if_needed() {
 }
 
 create_swap_if_needed
-
-echo -e "${GREEN}Обновление системы...${NC}"
-apt update && apt upgrade -y
-apt install -y curl wget gnupg qrencode jq
 
 # Настройка ufw (только 443)
 echo -e "${GREEN}Настройка ufw...${NC}"
@@ -352,6 +344,16 @@ cat > $HOME/help <<'EOF'
   update      — обновить ядро
   openssh     — открыть SSH для вашего IP и включить защиту от брутфорса (устанавливает fail2ban)
 EOF
+
+# === Отключение постоянного хранения логов (только RAM) ===
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/00-volatile.conf <<EOF
+[Journal]
+Storage=volatile
+RuntimeMaxUse=32M
+EOF
+systemctl restart systemd-journald 2>/dev/null || true
+journalctl --vacuum-time=1s
 
 # === Финальный вывод ===
 clear
