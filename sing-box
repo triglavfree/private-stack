@@ -83,11 +83,6 @@ SHORT_ID=$(openssl rand -hex 4)
 
 mkdir -p /usr/local/etc/sing-box
 
-# Сохраняем первого пользователя
-cat > /usr/local/etc/sing-box/.users <<EOF
-main:$UUID:$SHORT_ID
-EOF
-
 cat > /usr/local/etc/sing-box/.keys <<EOF
 uuid: $UUID
 private key: $REALITY_PRIV_KEY
@@ -95,6 +90,7 @@ public key: $REALITY_PUB_KEY
 shortsid: $SHORT_ID
 EOF
 
+# ⚠️ ВАЖНО: "listen": "::" → "listen": "0.0.0.0"
 cat > /usr/local/etc/sing-box/config.json <<EOF
 {
   "log": {"level": "warn"},
@@ -103,7 +99,7 @@ cat > /usr/local/etc/sing-box/config.json <<EOF
   },
   "inbounds": [{
     "type": "vless",
-    "listen": "::",
+    "listen": "0.0.0.0",
     "listen_port": 443,
     "users": [{"uuid": "$UUID", "flow": "xtls-rprx-vision"}],
     "tls": {
@@ -241,7 +237,7 @@ echo "🔗 Ссылка для '$name':"
 echo "$link"
 echo
 echo "QR-код:"
-echo "$link" | qrencode -t ansiutf8
+echo "$link" | qrencode -t ansiutf8 -s 2
 EOF
 
 cat > /usr/local/bin/sharelink <<'EOF'
@@ -339,7 +335,6 @@ echo -e "${YELLOW}💡 fail2ban активен: защищает от брутф
 EOF
 chmod +x /usr/local/bin/openssh
 
-# help
 cat > $HOME/help <<'EOF'
 Доступные команды:
   mainuser    — показать ссылку и QR основного пользователя
@@ -351,7 +346,6 @@ cat > $HOME/help <<'EOF'
   openssh     — открыть SSH для вашего IP и включить защиту от брутфорса (устанавливает fail2ban)
 EOF
 
-# Финальный вывод
 clear
 echo -e "${GREEN}✅ Установка sing-box (REALITY + Vision) завершена!${NC}"
 UUID=$(awk -F': ' '/uuid/ {print $2}' /usr/local/etc/sing-box/.keys)
@@ -365,7 +359,7 @@ if [[ -n "$IP" ]]; then
     echo "$LINK"
     echo
     echo "QR-код:"
-    echo "$LINK" | qrencode -t ansiutf8
+    echo "$LINK" | qrencode -t ansiutf8 -s 2
 fi
 echo
 echo -e "${GREEN} Введите cat help для списка команд${NC}"
