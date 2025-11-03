@@ -12,9 +12,9 @@
 [![GitHub last commit](https://img.shields.io/github/last-commit/triglavfree/private-stack)](https://github.com/triglavfree/private-stack)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/triglavfree/private-stack/pulls)
 [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/triglavfree/private-stack/blob/main/LICENSE)
-[![No Logs](https://img.shields.io/badge/NO-LOGS-RED)](#)
-[![No Tracking](https://img.shields.io/badge/NO-TRACKING-RED)](#)
-[![No Compromises](https://img.shields.io/badge/NO-COMPROMISES-RED)](#)
+[![No Logs](https://img.shields.io/badge/NO-LOGS-red)](#)
+[![No Tracking](https://img.shields.io/badge/NO-TRACKING-red)](#)
+[![No Compromises](https://img.shields.io/badge/NO-COMPROMISES-red)](#)
 
 # PRIVATE STACK 🛡️ [VLESS](https://xtls.github.io/ru/development/protocols/vless.html) + [REALITY](https://xtls.github.io/ru/config/transport.html) + [VISION](https://deepwiki.com/XTLS/Xray-examples/2.2-vless-+-tcp-+-xtls-vision)
 <div align="center">
