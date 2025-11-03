@@ -1,12 +1,14 @@
 [![Project X](https://img.shields.io/badge/Project-X-000000?logo=github&logoColor=white)](https://xtls.github.io/ru/config/)
 [![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/)
-![Xray Core](https://img.shields.io/badge/Xray%20Core-25.10.15-8A2BE2)
-![sing-box](https://img.shields.io/badge/sing--box-1.12.12-8A2BE2?logo=github&logoColor=white)
+[![Xray-Core](https://img.shields.io/badge/Xray%20Core-25.10.15-8A2BE2)](https://github.com/XTLS/Xray-core)
+[![sing-box](https://img.shields.io/badge/sing--box-1.12.12-8A2BE2?logo=github&logoColor=white)](https://github.com/SagerNet/sing-box)
 ![VLESS](https://img.shields.io/badge/VLESS-Protocol-green)
 ![Reality](https://img.shields.io/badge/Reality-Transport-orange)
 ![BBR](https://img.shields.io/badge/BBR-Optimized-yellow)
 ![VPS](https://img.shields.io/badge/VPS-1GB_RAM-lightgrey)
+[![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-007ACC?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI4IiBmaWxsPSIjMDA3QUNDIi8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iNiIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjE1IiBjeT0iOSIgcj0iMiIgZmlsbD0iIzAwN0FDQyIvPjxjaXJjbGUgY3g9IjkiIGN5PSIxNSIgcj0iMiIgZmlsbD0iIzAwN0FDQyIvPjxjaXJjbGUgY3g9IjE1IiBjeT0iMTUiIHI9IjIiIGZpbGw9IiMwMDdBQ0MiLz48Y2lyY2xlIGN4PSI5IiBjeT0iOSIgcj0iMiIgZmlsbD0iIzAwN0FDQyIvPjwvc3ZnPg==&logoColor=white&label=&labelColor=black)](https://deepwiki.com/XTLS/Xray-core)
 [![DeepSeek AI](https://img.shields.io/badge/Chat-DeepSeek%20AI-007BFF?logo=ai&logoColor=white)](https://chat.deepseek.com)
+
 
 
 # 🛡️ [VLESS](https://xtls.github.io/ru/development/protocols/vless.html) [REALITY](https://xtls.github.io/ru/config/transport.html) VISION
