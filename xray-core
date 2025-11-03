@@ -938,6 +938,7 @@ chmod +x /usr/local/bin/status
 # Перезагружаем xray
 systemctl restart xray
 
+clear
 echo "Xray-core успешно установлен"
 mainuser
 
