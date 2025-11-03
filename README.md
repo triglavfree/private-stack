@@ -59,3 +59,16 @@ cat help      # Вывести список доступных команд
 - Трафик **маскируется под HTTPS-соединение к** `www.cloudflare.com` **(obfuscation)**
 - Все порты, кроме 443/TCP, заблокированы фаерволом `ufw`
 - Вся настройка выполняется только через консоль хостинга
+
+## Удаление
+```
+systemctl stop xray
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove
+rm /usr/local/etc/xray/config.json
+rm /usr/local/etc/xray/.keys
+rm /usr/local/bin/userlist
+rm /usr/local/bin/mainuser
+rm /usr/local/bin/newuser
+rm /usr/local/bin/rmuser
+rm /usr/local/bin/sharelink
+```
