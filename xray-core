@@ -800,13 +800,32 @@ esac
 # Создаем скрипт обновления
 cat > /usr/local/bin/xray-update.sh <<'SCRIPT'
 #!/bin/bash
-echo "$(date): Starting Xray update..." >> /var/log/xray-update.log
-bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
-systemctl restart xray
-echo "$(date): Xray update completed" >> /var/log/xray-update.log
-SCRIPT
 
-chmod +x /usr/local/bin/xray-update.sh
+echo "$(date): Starting Xray update..." >> /var/log/xray-update.log
+
+# Обновление GeoIP и Geosite баз
+echo "$(date): Updating GeoIP and Geosite databases..." >> /var/log/xray-update.log
+cd /usr/local/share/xray
+
+# Скачивание последних версий GeoIP и Geosite баз
+# Используются базы от Loyalsoldier, которые популярны и хорошо поддерживаются[citation:3]
+wget -q -O geoip.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
+wget -q -O geosite.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+
+# Проверка успешности скачивания
+if [ $? -eq 0 ]; then
+    echo "$(date): Geo databases updated successfully" >> /var/log/xray-update.log
+else
+    echo "$(date): ERROR: Failed to update Geo databases" >> /var/log/xray-update.log
+    exit 1
+fi
+
+# Обновление ядра Xray
+bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+
+# Перезапуск Xray для применения обновлений
+systemctl restart xray
+echo "$(date): Xray update completed and service restarted" >> /var/log/xray-update.log
 
 # Настраиваем cron
 (crontab -l 2>/dev/null | grep -v "/usr/local/bin/xray-update.sh"; echo "0 2 */${INTERVAL} * * /usr/local/bin/xray-update.sh >/dev/null 2>&1") | crontab -
@@ -818,6 +837,103 @@ echo -e "${YELLOW}🔧 Ручное обновление: /usr/local/bin/xray-up
 EOF
 
 chmod +x /usr/local/bin/update
+
+# Функция показа статуса сервера
+cat > /usr/local/bin/status <<'EOF'
+#!/bin/bash
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+echo -e "${CYAN}🔄 СТАТУС СИСТЕМЫ PRIVATE STACK${NC}"
+echo -e "${CYAN}================================${NC}"
+
+# 1. Статус Xray-core
+echo -e "\n${YELLOW}🚀 XRAY-CORE STATUS:${NC}"
+if systemctl is-active xray >/dev/null 2>&1; then
+    echo -e "   ${GREEN}✅ Активен${NC}"
+    xray_version=$(/usr/local/bin/xray version | head -1 | awk '{print $2}')
+    echo -e "   📦 Версия: $xray_version"
+else
+    echo -e "   ${RED}❌ Не активен${NC}"
+fi
+
+# 2. Статус UFW
+echo -e "\n${YELLOW}🔧 ФАЙРВОЛ UFW:${NC}"
+if command -v ufw &> /dev/null; then
+    ufw_status=$(ufw status | grep "Status")
+    if echo "$ufw_status" | grep -q "active"; then
+        echo -e "   ${GREEN}✅ Активен${NC}"
+        echo -e "   📡 Открытые порты:"
+        ufw status | grep "ALLOW" | while read line; do
+            echo -e "      $line"
+        done
+    else
+        echo -e "   ${RED}❌ Не активен${NC}"
+    fi
+else
+    echo -e "   ${YELLOW}⚠️  Не установлен${NC}"
+fi
+
+# 3. Статус fail2ban
+echo -e "\n${YELLOW}🛡️  FAIL2BAN:${NC}"
+if command -v fail2ban-client &> /dev/null; then
+    if systemctl is-active fail2ban >/dev/null 2>&1; then
+        echo -e "   ${GREEN}✅ Активен${NC}"
+        echo -e "   🔒 Заблокированные IP:"
+        fail2ban-client status sshd | grep "Banned IP list" | while read line; do
+            echo -e "      $line"
+        done
+    else
+        echo -e "   ${RED}❌ Не активен${NC}"
+    fi
+else
+    echo -e "   ${YELLOW}⚠️  Не установлен${NC}"
+fi
+
+# 4. Статус автообновления
+echo -e "\n${YELLOW}🔄 АВТООБНОВЛЕНИЕ:${NC}"
+if crontab -l 2>/dev/null | grep -q "xray-update.sh"; then
+    echo -e "   ${GREEN}✅ Включено${NC}"
+    cron_line=$(crontab -l | grep "xray-update.sh")
+    interval=$(echo "$cron_line" | grep -o '\*\/[0-9]*' | cut -d'/' -f2)
+    echo -e "   📅 Интервал: каждые $interval дней"
+else
+    echo -e "   ${YELLOW}⚠️  Не настроено${NC}"
+fi
+
+# 5. Пользователи
+echo -e "\n${YELLOW}👥 ПОЛЬЗОВАТЕЛИ:${NC}"
+user_count=$(jq -r '.inbounds[0].settings.clients | length' /usr/local/etc/xray/config.json 2>/dev/null || echo "0")
+echo -e "   👤 Количество: $user_count"
+
+# 6. Информация о сервере
+echo -e "\n${YELLOW}🌐 СЕРВЕР:${NC}"
+server_ip=$(curl -4 -s icanhazip.com 2>/dev/null || echo "не удалось определить")
+echo -e "   📍 IP: $server_ip"
+echo -e "   🖥️  Порт: 443/TCP"
+
+# 7. Использование памяти
+echo -e "\n${YELLOW}💾 РЕСУРСЫ:${NC}"
+memory_usage=$(free -h | awk '/^Mem:/ {print $3 " / " $2 " (" $3/$2*100 "% )"}')
+echo -e "   🧠 Память: $memory_usage"
+
+# 8. Статус логов
+echo -e "\n${YELLOW}📊 ЛОГИ:${NC}"
+if grep -q "Storage=volatile" /etc/systemd/journald.conf.d/00-volatile.conf 2>/dev/null; then
+    echo -e "   ${GREEN}✅ Только RAM (volatile)${NC}"
+    echo -e "   🗑️  Очистка при перезагрузке"
+else
+    echo -e "   ${YELLOW}⚠️  Обычное хранение${NC}"
+fi
+
+echo -e "\n${CYAN}================================${NC}"
+echo -e "${CYAN}💡 Используйте 'cat help' для всех команд${NC}"
+EOF
+
+chmod +x /usr/local/bin/status
 
 # Перезагружаем xray
 systemctl restart xray
@@ -836,7 +952,8 @@ cat << 'EOF' > $HOME/help
     adduser    - создает нового пользователя
     listuser   - выводит список клиентов
     rmuser     - удаление пользователей
-    update     - настроить автообновление Xray
+    status     - показать статус всей системы
+    update     - настроить автообновление Xray и geoбаз
     openssh    - открывает SSH доступ для введённого IP и установит ufw и fail2ban
     closessh   - закроет все порты кроме 443/TCP
     sharelink  - показывает ссылки и QR пользователя для подключения
