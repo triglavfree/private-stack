@@ -164,12 +164,13 @@ echo "shortsid: $(openssl rand -hex 8)" >> /usr/local/etc/xray/.keys
 echo "uuid: $(xray uuid)" >> /usr/local/etc/xray/.keys
 xray x25519 >> /usr/local/etc/xray/.keys
 
-export uuid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/uuid/ {print $2}')
-export privatkey=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {print $2}')
-export shortsid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
+# ПОЛУЧАЕМ РЕАЛЬНЫЕ ЗНАЧЕНИЯ КЛЮЧЕЙ
+UUID=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/uuid/ {print $2}')
+PRIVATE_KEY=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {print $2}')
+SHORT_ID=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 
-# Финальная конфигурация Xray  VLESS + Reality + Vision с DoH Cloudflare маскировкой (obfuscation)
-cat > /usr/local/etc/xray/config.json << 'EOF'
+# # Финальная конфигурация Xray  VLESS + Reality + Vision с DoH Cloudflare маскировкой (obfuscation)
+cat > /usr/local/etc/xray/config.json << EOF
 {
     "log": {
         "loglevel": "warning",
@@ -248,7 +249,7 @@ cat > /usr/local/etc/xray/config.json << 'EOF'
                 "clients": [
                     {
                         "email": "main",
-                        "id": "$(cat /usr/local/etc/xray/.keys | awk -F': ' '/uuid/ {print $2}')",
+                        "id": "$UUID",
                         "flow": "xtls-rprx-vision"
                     }
                 ],
@@ -266,12 +267,12 @@ cat > /usr/local/etc/xray/config.json << 'EOF'
                         "cloudflare.com",
                         "api.cloudflare.com"
                     ],
-                    "privateKey": "$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {print $2}')",
+                    "privateKey": "$PRIVATE_KEY",
                     "minClientVer": "",
                     "maxClientVer": "",
                     "maxTimeDiff": 0,
                     "shortIds": [
-                        "$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')"
+                        "$SHORT_ID"
                     ]
                 }
             },
