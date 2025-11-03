@@ -53,9 +53,11 @@ cat << EOF > /usr/local/etc/xray/config.json
     "dns": {
         "servers": [
             {
-                "address": "https://cloudflare-dns.com/dns-query",
-                "domains": ["geosite:category-ads-all", "geosite:cn"]
-            }
+                "address": "https://1.1.1.1/dns-query",
+                "domains": ["geosite:category-ads-all", "geosite:cn"],
+                "expectedIPs": ["1.1.1.1", "1.0.0.1"]
+            },
+            "1.1.1.1"
         ],
         "disableCache": true,
         "disableFallback": true
@@ -65,9 +67,7 @@ cat << EOF > /usr/local/etc/xray/config.json
         "rules": [
             {
                 "type": "field",
-                "domain": [
-                    "geosite:category-ads-all"
-                ],
+                "domain": ["geosite:category-ads-all"],
                 "outboundTag": "block"
             }
         ]
@@ -80,7 +80,6 @@ cat << EOF > /usr/local/etc/xray/config.json
             "settings": {
                 "clients": [
                     {
-                        "email": "main",
                         "id": "$uuid",
                         "flow": "xtls-rprx-vision"
                     }
@@ -94,26 +93,14 @@ cat << EOF > /usr/local/etc/xray/config.json
                     "show": false,
                     "dest": "www.cloudflare.com:443",
                     "xver": 0,
-                    "serverNames": [
-                        "www.cloudflare.com",
-                        "cloudflare.com"
-                    ],
+                    "serverNames": ["www.cloudflare.com"],
                     "privateKey": "$privatkey",
-                    "minClientVer": "",
-                    "maxClientVer": "",
-                    "maxTimeDiff": 90000,
-                    "shortIds": [
-                        "$shortsid"
-                    ]
+                    "shortIds": ["$shortsid"]
                 }
             },
             "sniffing": {
                 "enabled": true,
-                "destOverride": [
-                    "http",
-                    "tls",
-                    "quic"
-                ]
+                "destOverride": ["http", "tls", "quic"]
             }
         }
     ],
@@ -137,7 +124,6 @@ cat << EOF > /usr/local/etc/xray/config.json
     }
 }
 EOF
-
 
 # Исполняемый файл для списка клиентов
 touch /usr/local/bin/listuser
@@ -164,19 +150,20 @@ cat << 'EOF' > /usr/local/bin/mainuser
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
 port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
 uuid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/uuid/ {print $2}')
-pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
+pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PublicKey/ {print $2}')
 sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
-ip=$(timeout 3 curl -4 -s icanhazip.com)
-link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-$ip"
+ip=$(timeout 3 curl -4 -s ifconfig.me)
+link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
 echo ""
-echo "Ссылка для подключения":
+echo "Ссылка для подключения:"
 echo "$link"
 echo ""
 echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8
+echo "$link" | qrencode -t ansiutf8 -s 0
 EOF
 chmod +x /usr/local/bin/mainuser
+
 
 # Исполняемый файл для создания новых клиентов
 touch /usr/local/bin/newuser
