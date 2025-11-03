@@ -30,7 +30,7 @@ curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/xray-c
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-box | bash
 ```
-## 🎯 АВТОМАТИЧЕСКАЯ НАСТРОЙКА
+## 🚀 АВТОМАТИЧЕСКАЯ НАСТРОЙКА
 🔧 **Системная оптимизация**
 - **BBR Turbo** - оптимизировано для 1GB RAM VPS
 - **NVMe Boost** - специальные настройки для SSD дисков
