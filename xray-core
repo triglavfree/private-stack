@@ -169,7 +169,7 @@ export privatkey=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {pri
 export shortsid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 
 # Финальная конфигурация Xray  VLESS + Reality + Vision с DoH Cloudflare маскировкой (obfuscation)
-cat << EOF > /usr/local/etc/xray/config.json
+cat > /usr/local/etc/xray/config.json << 'EOF'
 {
     "log": {
         "loglevel": "warning",
@@ -180,16 +180,6 @@ cat << EOF > /usr/local/etc/xray/config.json
         "servers": [
             "1.1.1.1",
             "8.8.8.8",
-            {
-                "address": "1.1.1.1",
-                "port": 53,
-                "domains": [
-                    "geosite:cn"
-                ],
-                "expectIPs": [
-                    "geoip:cn"
-                ]
-            },
             {
                 "address": "localhost",
                 "skipFallback": true
@@ -219,12 +209,7 @@ cat << EOF > /usr/local/etc/xray/config.json
             },
             {
                 "type": "field",
-                "ip": [
-                    "1.1.1.1",
-                    "8.8.8.8",
-                    "1.0.0.1",
-                    "8.8.4.4"
-                ],
+                "ip": ["1.1.1.1", "8.8.8.8", "1.0.0.1", "8.8.4.4"],
                 "outboundTag": "direct"
             },
             {
@@ -244,12 +229,7 @@ cat << EOF > /usr/local/etc/xray/config.json
             },
             {
                 "type": "field",
-                "domain": ["geosite:cn", "geosite:ru"],
-                "outboundTag": "direct"
-            },
-            {
-                "type": "field",
-                "ip": ["geoip:cn", "geoip:ru", "geoip:private"],
+                "ip": ["geoip:private"],
                 "outboundTag": "direct"
             },
             {
@@ -268,7 +248,7 @@ cat << EOF > /usr/local/etc/xray/config.json
                 "clients": [
                     {
                         "email": "main",
-                        "id": "$uuid",
+                        "id": "$(cat /usr/local/etc/xray/.keys | awk -F': ' '/uuid/ {print $2}')",
                         "flow": "xtls-rprx-vision"
                     }
                 ],
@@ -286,12 +266,12 @@ cat << EOF > /usr/local/etc/xray/config.json
                         "cloudflare.com",
                         "api.cloudflare.com"
                     ],
-                    "privateKey": "$privatkey",
+                    "privateKey": "$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {print $2}')",
                     "minClientVer": "",
                     "maxClientVer": "",
                     "maxTimeDiff": 0,
                     "shortIds": [
-                        "$shortsid"
+                        "$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')"
                     ]
                 }
             },
