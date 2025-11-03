@@ -168,7 +168,7 @@ export uuid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/uuid/ {print $2}')
 export privatkey=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {print $2}')
 export shortsid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 
-# Финальная конфигурация Xray  VLESS + Reality + Vision с DoH Cloudflare маскировкой
+# Финальная конфигурация Xray  VLESS + Reality + Vision с DoH Cloudflare маскировкой (obfuscation)
 cat << EOF > /usr/local/etc/xray/config.json
 {
     "log": {
