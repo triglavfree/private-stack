@@ -141,7 +141,7 @@ for i in "${!emails[@]}"; do
     echo "$((i+1)). ${emails[$i]}"
 done
 EOF
-chmod +x /usr/local/bin/userlist
+chmod +x /usr/local/bin/listuser
 
 # исполняемый файл для ссылки основного пользователя
 touch /usr/local/bin/mainuser
@@ -160,7 +160,7 @@ echo "Ссылка для подключения:"
 echo "$link"
 echo ""
 echo "QR-код:"
-echo "$link" | qrencode -t ansiutf8 -s 1
+echo "$link" | qrencode -t ansiutf8 -s 0
 EOF
 chmod +x /usr/local/bin/mainuser
 
