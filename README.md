@@ -55,7 +55,7 @@ curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-b
 - **QR-коды** - мгновенное подключение мобильных устройств
 
 
-## 📱 КЛИЕНТЫ ДЛЯ ВСЕХ ПЛАТФОРМ. [ЕЩЁ](https://xtls.github.io/ru/document/install.html#%D0%B3%D1%80%D0%B0%D1%84%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B5-%D0%BA%D0%BB%D0%B8%D0%B5%D0%BD%D1%82%D1%8B)
+## 📱 [КЛИЕНТЫ ДЛЯ ВСЕХ ПЛАТФОРМ](https://xtls.github.io/ru/document/install.html#%D0%B3%D1%80%D0%B0%D1%84%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B5-%D0%BA%D0%BB%D0%B8%D0%B5%D0%BD%D1%82%D1%8B)
 | Платформа     | Клиент   | Где взять                     |
 |---------------|----------|-------------------------------|
 | **iOS/macOS** | Hiddify  | [GitHub Releases](https://github.com/hiddify/hiddify-app/releases)|
