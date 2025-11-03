@@ -160,7 +160,7 @@ echo "Ссылка для подключения:"
 echo "$link"
 echo ""
 echo "QR-код:"
-echo "$link" | qrencode -t ansiutf8 -s 0
+echo "$link" | qrencode -t ansiutf8 -s 1
 EOF
 chmod +x /usr/local/bin/mainuser
 
