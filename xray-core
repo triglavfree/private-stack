@@ -516,3 +516,4 @@ DNS: Cloudflare DoH (https://1.1.1.1/dns-query)
 - Sniffing для определения доменов
 
 EOF
+#clear
