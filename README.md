@@ -45,8 +45,8 @@ curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-b
   
 🌐 **Сетевая конфигураци**
 - **VLESS + REALITY + Vision** - необнаруживаемый протокол
-- **DNS over HTTPS** - Cloudflare DoH https://1.1.1.1/dns-query
-- **Traffic Obfuscation** - маскировка под www.cloudflare.com
+- **DNS over HTTPS** - Cloudflare DoH `https://1.1.1.1/dns-query`
+- **Traffic Obfuscation** - маскировка под `www.cloudflare.com`
 - **Geo-IP Filtering** - интеллектуальная маршрутизация трафика
 
 👥 **Умное управление пользователями**
