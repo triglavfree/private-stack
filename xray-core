@@ -1,6 +1,17 @@
 #!/bin/bash
 apt update
-apt install qrencode curl jq -y 
+apt install qrencode curl jq -y
+
+# Включаем bbr
+bbr=$(sysctl -a | grep net.ipv4.tcp_congestion_control)
+if [ "$bbr" = "net.ipv4.tcp_congestion_control = bbr" ]; then
+echo "bbr уже включен"
+else
+echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+sysctl -p
+echo "bbr включен"
+fi
 
 # Очищаем системные логи и настраиваем хранение только в RAM
 journalctl --vacuum-time=1s --no-pager >/dev/null 2>&1
@@ -10,27 +21,49 @@ if ! grep -q '^Storage=volatile' /etc/systemd/journald.conf; then
     systemctl restart systemd-journald
 fi
 
-# Создаем swap 2GB если RAM <= 1GB
-RAM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-RAM_MB=$((RAM_KB / 1024))
-if [ "$RAM_MB" -le 1024 ] && [ ! -f /swapfile ]; then
-    fallocate -l 2G /swapfile
-    chmod 600 /swapfile
-    mkswap /swapfile
-    swapon /swapfile
-    echo '/swapfile none swap sw 0 0' >> /etc/fstab
-fi
 
-# Включаем bbr
-bbr=$(sysctl -a | grep net.ipv4.tcp_congestion_control)
-if [ "$bbr" = "net.ipv4.tcp_congestion_control = bbr" ]; then
-    echo "bbr уже включен"
-else
-    echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
-    echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-    sysctl -p
-    echo "bbr включен"
-fi
+# Swap: 2 ГБ если RAM ≤ 1 ГБ и swap отсутствует
+setup_swap_if_needed() {
+    local ram_kb ram_mb
+    ram_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    ram_mb=$((ram_kb / 1024))
+
+    # Проверяем, есть ли уже активный swap
+    if swapon --show | grep -q .; then
+        echo "info: swap уже активен, пропускаем."
+        return 0
+    fi
+
+    # Если /swapfile существует, но не активен — активируем его
+    if [ -f /swapfile ]; then
+        echo "info: /swapfile найден, активируем..."
+        swapon /swapfile
+        return 0
+    fi
+
+    # Создаём swap только если RAM ≤ 1 ГБ
+    if [ "$ram_mb" -le 1024 ]; then
+        echo "info: RAM = ${ram_mb} MB ≤ 1024 MB — создаём swap 2 ГБ..."
+        if fallocate -l 2G /swapfile >/dev/null 2>&1; then
+            :
+        else
+            # fallback для файловых систем, не поддерживающих fallocate
+            echo "info: fallocate недоступен, используем dd..."
+            dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none 2>/dev/null
+        fi
+        chmod 600 /swapfile
+        mkswap /swapfile >/dev/null 2>&1
+        swapon /swapfile
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        echo "info: swap 2 ГБ успешно создан и активирован."
+    else
+        echo "info: RAM = ${ram_mb} MB > 1024 MB — swap не требуется."
+    fi
+}
+
+# ВЫЗЫВАЕМ ФУНКЦИЮ создания swap
+setup_swap_if_needed
+
 # Устанавливаем ядро Xray
 bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 [ -f /usr/local/etc/xray/.keys ] && rm /usr/local/etc/xray/.keys
@@ -43,7 +76,7 @@ export uuid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/uuid/ {print $2}')
 export privatkey=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {print $2}')
 export shortsid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 
-# Создаем файл конфигурации Xray
+# Создаем файл конфигурации Xray с Cloudflare маскировкой и DoH
 touch /usr/local/etc/xray/config.json
 cat << EOF > /usr/local/etc/xray/config.json
 {
@@ -52,22 +85,57 @@ cat << EOF > /usr/local/etc/xray/config.json
     },
     "dns": {
         "servers": [
+            "https+local://1.1.1.1/dns-query",
+            "1.1.1.1",
             {
-                "address": "https://1.1.1.1/dns-query",
-                "domains": ["geosite:category-ads-all", "geosite:cn"],
-                "expectedIPs": ["1.1.1.1", "1.0.0.1"]
+                "address": "https+local://1.1.1.1/dns-query",
+                "domains": [
+                    "geosite:cn"
+                ],
+                "expectIPs": [
+                    "geoip:cn"
+                ]
             },
-            "1.1.1.1"
-        ],
-        "disableCache": true,
-        "disableFallback": true
+            "localhost"
+        ]
     },
     "routing": {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
             {
                 "type": "field",
-                "domain": ["geosite:category-ads-all"],
+                "domain": [
+                    "geosite:category-ads-all"
+                ],
+                "outboundTag": "block"
+            },
+            {
+                "type": "field",
+                "ip": [
+                    "1.1.1.1"
+                ],
+                "outboundTag": "proxy"
+            },
+            {
+                "type": "field",
+                "domain": [
+                    "geosite:cn"
+                ],
+                "outboundTag": "direct"
+            },
+            {
+                "type": "field",
+                "ip": [
+                    "geoip:cn",
+                    "geoip:private"
+                ],
+                "outboundTag": "direct"
+            },
+            {
+                "type": "field",
+                "protocol": [
+                    "bittorrent"
+                ],
                 "outboundTag": "block"
             }
         ]
@@ -80,6 +148,7 @@ cat << EOF > /usr/local/etc/xray/config.json
             "settings": {
                 "clients": [
                     {
+                        "email": "main",
                         "id": "$uuid",
                         "flow": "xtls-rprx-vision"
                     }
@@ -93,25 +162,49 @@ cat << EOF > /usr/local/etc/xray/config.json
                     "show": false,
                     "dest": "www.cloudflare.com:443",
                     "xver": 0,
-                    "serverNames": ["www.cloudflare.com"],
+                    "serverNames": [
+                        "www.cloudflare.com",
+                        "cloudflare.com",
+                        "api.cloudflare.com"
+                    ],
                     "privateKey": "$privatkey",
-                    "shortIds": ["$shortsid"]
+                    "minClientVer": "",
+                    "maxClientVer": "",
+                    "maxTimeDiff": 0,
+                    "shortIds": [
+                        "$shortsid"
+                    ]
                 }
             },
             "sniffing": {
                 "enabled": true,
-                "destOverride": ["http", "tls", "quic"]
+                "destOverride": [
+                    "http",
+                    "tls",
+                    "quic"
+                ],
+                "routeOnly": false
             }
         }
     ],
     "outbounds": [
         {
             "protocol": "freedom",
-            "tag": "direct"
+            "tag": "direct",
+            "settings": {
+                "domainStrategy": "UseIP"
+            }
         },
         {
             "protocol": "blackhole",
             "tag": "block"
+        },
+        {
+            "protocol": "freedom",
+            "tag": "proxy",
+            "settings": {
+                "domainStrategy": "UseIP"
+            }
         }
     ],
     "policy": {
@@ -150,20 +243,19 @@ cat << 'EOF' > /usr/local/bin/mainuser
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
 port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
 uuid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/uuid/ {print $2}')
-pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PublicKey/ {print $2}')
+pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
 sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
-ip=$(timeout 3 curl -4 -s ifconfig.me)
-link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
+ip=$(timeout 3 curl -4 -s icanhazip.com)
+link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
 echo ""
 echo "Ссылка для подключения:"
 echo "$link"
 echo ""
 echo "QR-код:"
-echo "$link" | qrencode -t ansiutf8 -s1
+echo ${link} | qrencode -t ansiutf8 -s1
 EOF
 chmod +x /usr/local/bin/mainuser
-
 
 # Исполняемый файл для создания новых клиентов
 touch /usr/local/bin/newuser
@@ -185,14 +277,14 @@ index=$(jq --arg email "$email" '.inbounds[0].settings.clients | to_entries[] | 
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
 port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
 uuid=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].id' /usr/local/etc/xray/config.json)
-pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PublicKey/ {print $2}')
+pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
 sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 username=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].email' /usr/local/etc/xray/config.json)
 sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
 ip=$(curl -4 -s icanhazip.com)
 link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$username"
 echo ""
-echo "Ссылка для подключения":
+echo "Ссылка для подключения:"
 echo "$link"
 echo ""
 echo "QR-код:"
@@ -238,7 +330,7 @@ echo "Клиент $selected_email удалён."
 EOF
 chmod +x /usr/local/bin/rmuser
 
-# Исполняемый файл для вывода списка пользователей и создания ссылкок
+# Исполняемый файл для вывода списка пользователей и создания ссылок
 touch /usr/local/bin/sharelink
 cat << 'EOF' > /usr/local/bin/sharelink
 #!/bin/bash
@@ -257,19 +349,18 @@ fi
 
 selected_email="${emails[$((client - 1))]}"
 
-
 index=$(jq --arg email "$selected_email" '.inbounds[0].settings.clients | to_entries[] | select(.value.email == $email) | .key'  /usr/local/etc/xray/config.json)
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
 port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json) 
 uuid=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].id' /usr/local/etc/xray/config.json)
-pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PublicKey/ {print $2}')
+pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
 sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 username=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].email' /usr/local/etc/xray/config.json)
 sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
 ip=$(curl -4 -s icanhazip.com)
 link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$username"
 echo ""
-echo "Ссылка для подключения":
+echo "Ссылка для подключения:"
 echo "$link"
 echo ""
 echo "QR-код:"
@@ -292,9 +383,7 @@ cat << 'EOF' > $HOME/help
     newuser - создает нового пользователя
     rmuser - удаление пользователей
     sharelink - выводит список пользователей и позволяет создать для них ссылки для подключения
-    listuer - выводит список клиентов
-
-
+    listuser - выводит список клиентов
 
 Файл конфигурации находится по адресу:
 
@@ -303,5 +392,14 @@ cat << 'EOF' > $HOME/help
 Команда для перезагрузки ядра Xray:
 
     systemctl restart xray
+
+Текущая конфигурация: VLESS + REALITY + Vision
+Маскировка под: www.cloudflare.com DNS: Cloudflare DoH (https://1.1.1.1/dns-query)
+
+Особенности конфигурации:
+- DNS через DoH для шифрования запросов
+- Разделение трафика (китайские сайты идут напрямую)
+- Блокировка рекламы и BitTorrent
+- Sniffing для определения доменов
 
 EOF
