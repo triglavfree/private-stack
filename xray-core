@@ -188,8 +188,9 @@ cat > /usr/local/etc/xray/config.json << EOF
 {
     "log": {
         "loglevel": "warning",
-        "dnsLog": false,
-        "access": "none"
+        "access": "none",
+        "error": "none", 
+        "dnsLog": false
     },
     "dns": {
         "servers": [
@@ -820,6 +821,8 @@ cat << 'EOF' > $HOME/help
     listuser   - выводит список клиентов
     rmuser     - удаление пользователей
     update     - настроить автообновление Xray
+    openssh    - открывает SSH доступ для введённого IP и установит ufw и fail2ban
+    closessh   - закроет все порты кроме 443/TCP
     sharelink  - показывает ссылки и QR пользователя для подключения
     
 
