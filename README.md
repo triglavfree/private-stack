@@ -9,9 +9,12 @@
 ![VPS](https://img.shields.io/badge/VPS-1GB_RAM-lightgrey)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-007ACC?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI4IiBmaWxsPSIjMDA3QUNDIi8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iNiIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjE1IiBjeT0iOSIgcj0iMiIgZmlsbD0iIzAwN0FDQyIvPjxjaXJjbGUgY3g9IjkiIGN5PSIxNSIgcj0iMiIgZmlsbD0iIzAwN0FDQyIvPjxjaXJjbGUgY3g9IjE1IiBjeT0iMTUiIHI9IjIiIGZpbGw9IiMwMDdBQ0MiLz48Y2lyY2xlIGN4PSI5IiBjeT0iOSIgcj0iMiIgZmlsbD0iIzAwN0FDQyIvPjwvc3ZnPg==&logoColor=white&label=&labelColor=black)](https://deepwiki.com/XTLS/Xray-core)
 [![DeepSeek AI](https://img.shields.io/badge/Chat-DeepSeek%20AI-007BFF?logo=ai&logoColor=white)](https://chat.deepseek.com)
-[![No Logs](https://img.shields.io/badge/NO-LOGS-green)](#)
-[![No Tracking](https://img.shields.io/badge/NO-TRACKING-green)](#)
-[![No Compromises](https://img.shields.io/badge/NO-COMPROMISES-green)](#)
+[![GitHub last commit](https://img.shields.io/github/last-commit/triglavfree/private-stack)](https://github.com/triglavfree/private-stack)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/triglavfree/private-stack/pulls)
+[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/triglavfree/private-stack/blob/main/LICENSE)
+[![No Logs](https://img.shields.io/badge/NO-LOGS-RED)](#)
+[![No Tracking](https://img.shields.io/badge/NO-TRACKING-RED)](#)
+[![No Compromises](https://img.shields.io/badge/NO-COMPROMISES-RED)](#)
 
 # PRIVATE STACK 🛡️ [VLESS](https://xtls.github.io/ru/development/protocols/vless.html) + [REALITY](https://xtls.github.io/ru/config/transport.html) + [VISION](https://deepwiki.com/XTLS/Xray-examples/2.2-vless-+-tcp-+-xtls-vision)
 <div align="center">
