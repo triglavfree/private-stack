@@ -169,7 +169,7 @@ UUID=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/uuid/ {print $2}')
 PRIVATE_KEY=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {print $2}')
 SHORT_ID=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 
-# # Финальная конфигурация Xray  VLESS + Reality + Vision с DoH Cloudflare маскировкой (obfuscation)
+# Финальная конфигурация Xray VLESS + Reality + Vision с двумя пользователями
 cat > /usr/local/etc/xray/config.json << EOF
 {
     "log": {
@@ -251,6 +251,11 @@ cat > /usr/local/etc/xray/config.json << EOF
                         "email": "main",
                         "id": "$UUID",
                         "flow": "xtls-rprx-vision"
+                    },
+                    {
+                        "email": "ios",
+                        "id": "$(xray uuid)",
+                        "flow": "xtls-rprx-vision"
                     }
                 ],
                 "decryption": "none"
@@ -265,7 +270,11 @@ cat > /usr/local/etc/xray/config.json << EOF
                     "serverNames": [
                         "www.cloudflare.com",
                         "cloudflare.com",
-                        "api.cloudflare.com"
+                        "api.cloudflare.com",
+                        "www.icloud.com",
+                        "icloud.com",
+                        "apple.com",
+                        "www.apple.com"
                     ],
                     "privateKey": "$PRIVATE_KEY",
                     "minClientVer": "",
@@ -342,6 +351,52 @@ echo "QR-код:"
 echo "$link" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
+
+# Исполняемый файл для создания ios профиля
+cat << 'EOF' > /usr/local/bin/iosuser
+#!/bin/bash
+protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
+port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
+uuid=$(jq -r '.inbounds[0].settings.clients[] | select(.email == "ios") | .id' /usr/local/etc/xray/config.json)
+pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
+sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
+ip=$(timeout 3 curl -4 -s icanhazip.com)
+
+# iOS-специфичные настройки
+sni="www.icloud.com"
+fp="ios"  # iOS fingerprint
+
+link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=$fp&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#ios"
+
+echo ""
+echo "=== iOS ПРОФИЛЬ ДЛЯ SHADOWROCKET ==="
+echo "Сервер: $ip"
+echo "Порт: $port"
+echo "UUID: $uuid"
+echo "Public Key: $pbk"
+echo "Short ID: $sid"
+echo "SNI: $sni"
+echo "Fingerprint: $fp"
+echo ""
+echo "Ссылка для подключения:"
+echo "$link"
+echo ""
+echo "QR-код для Shadowrocket:"
+echo "$link" | qrencode -t ansiutf8
+echo ""
+echo "Ручная настройка в Shadowrocket:"
+echo "Тип: VLESS"
+echo "Адрес: $ip"
+echo "Порт: $port"
+echo "UUID: $uuid"
+echo "Защита: reality"
+echo "SNI: $sni"
+echo "Public Key: $pbk"
+echo "Short ID: $sid"
+echo "Flow: xtls-rprx-vision"
+echo "Fingerprint: iOS"
+EOF
+chmod +x /usr/local/bin/iosuser
 
 # Исполняемый файл для создания новых клиентов
 cat << 'EOF' > /usr/local/bin/adduser
@@ -433,7 +488,7 @@ done
 EOF
 chmod +x /usr/local/bin/listuser
 
-# Исполняемый файл для вывода списка пользователей и создания ссылок
+# Исполняемый файл для показа ссылок и QR
 cat << 'EOF' > /usr/local/bin/sharelink
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].settings.clients[].email' /usr/local/etc/xray/config.json))
@@ -458,10 +513,18 @@ uuid=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].id'
 pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
 sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 username=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].email' /usr/local/etc/xray/config.json)
-sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
 ip=$(curl -4 -s icanhazip.com)
 
-link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$username"
+# Выбираем SNI в зависимости от пользователя
+if [ "$selected_email" = "ios" ]; then
+    sni="www.icloud.com"
+    fp="ios"
+else
+    sni="www.cloudflare.com" 
+    fp="firefox"
+fi
+
+link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=$fp&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$username"
 
 echo ""
 echo "Ссылка для подключения:"
@@ -483,11 +546,13 @@ cat << 'EOF' > $HOME/help
 
 Команды для управления пользователями Xray:
 
-    mainuser - выводит ссылку для подключения основного пользователя
-    adduser - создает нового пользователя
-    rmuser - удаление пользователей
-    sharelink - выводит список пользователей и позволяет создать для них ссылки для подключения
+    mainuser - выводит ссылку для подключения основного пользователя (Cloudflare)
+    iosuser  - выводит ссылку для iOS устройства (iCloud маскировка)
+    adduser  - создает нового пользователя
     listuser - выводит список клиентов
+    rmuser   - удаление пользователей
+    sharelink - показывает ссылки и QR пользователя для подключения
+    
 
 Файл конфигурации находится по адресу:
 
@@ -498,7 +563,15 @@ cat << 'EOF' > $HOME/help
     systemctl restart xray
 
 Текущая конфигурация: VLESS + REALITY + Vision
-Маскировка под: www.cloudflare.com
+Два пользователя по умолчанию:
+- main: маскировка под www.cloudflare.com
+- ios:  маскировка под www.icloud.com (оптимизирован для iOS)
+
+Особенности iOS профиля:
+- Fingerprint: iOS (для лучшей маскировки на Apple устройствах)
+- SNI: www.icloud.com (идеальная маскировка для iOS трафика)
+- Использует встроенную TLS библиотеку iOS
+
 DNS: Cloudflare DoH (https://1.1.1.1/dns-query)
 
 Особенности конфигурации:
