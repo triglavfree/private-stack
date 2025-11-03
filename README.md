@@ -1,7 +1,7 @@
-[![Qwen3-Max](https://img.shields.io/badge/Decoration%20by-Qwen3--Max-blue?logo=alibaba)](https://help.aliyun.com/zh/model-studio) [![Powered by Mistral ](https://img.shields.io/badge/Powered%20by-Mistral%20AI-FA520F?logo=artificial-intelligence&logoColor=white)](https://chat.mistral.ai) [![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/) [![Project X](https://img.shields.io/badge/Project-X-000000?logo=github&logoColor=white)](https://xtls.github.io/ru/config/)
+[![DeepSeek AI](https://img.shields.io/badge/Chat-DeepSeek%20AI-007BFF?logo=ai&logoColor=white)](https://chat.deepseek.com) [![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/) [![Project X](https://img.shields.io/badge/Project-X-000000?logo=github&logoColor=white)](https://xtls.github.io/ru/config/)
 
 
-# 🛡️ [VLESS](https://xtls.github.io/ru/config/outbounds/vless.html) REALITY + Vision
+# 🛡️ [VLESS](https://xtls.github.io/ru/config/outbounds/vless.html) REALITY VISION
 > НЕТ ЛОГОВ. НЕТ ТРЕКИНГА. НЕТ КОМПРОМИССОВ. ✅ СКРИПТ ПОЛНОСТЬЮ ОПТИМИЗИРОВАН ДЛЯ 1GB RAM VPS
 
 
