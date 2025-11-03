@@ -2,20 +2,101 @@
 apt update
 apt install qrencode curl jq -y
 
-# Включаем bbr
-bbr=$(sysctl -a | grep net.ipv4.tcp_congestion_control)
-if [ "$bbr" = "net.ipv4.tcp_congestion_control = bbr" ]; then
-echo "bbr уже включен"
+# УЛУЧШЕННАЯ НАСТРОЙКА BBR ДЛЯ МАЛОМОЩНЫХ VPS
+echo "Настройка оптимизированного BBR для 1GB RAM VPS..."
+
+# Проверяем текущие настройки
+bbr_status=$(sysctl -a 2>/dev/null | grep net.ipv4.tcp_congestion_control | awk '{print $3}')
+
+if [ "$bbr_status" = "bbr" ]; then
+    echo "BBR уже включен"
 else
-echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
-echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-sysctl -p
-echo "bbr включен"
+    # Очищаем старые настройки
+    sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+    sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+    sed -i '/net.ipv4.tcp_fastopen/d' /etc/sysctl.conf
+    sed -i '/net.core.rmem_max/d' /etc/sysctl.conf
+    sed -i '/net.core.wmem_max/d' /etc/sysctl.conf
+    sed -i '/net.ipv4.tcp_rmem/d' /etc/sysctl.conf
+    sed -i '/net.ipv4.tcp_wmem/d' /etc/sysctl.conf
+    
+    # ОПТИМИЗИРОВАННЫЕ НАСТРОЙКИ ДЛЯ 1GB RAM
+    cat << 'SYSCTL' >> /etc/sysctl.conf
+# BBR Congestion Control
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+
+# TCP Fast Open
+net.ipv4.tcp_fastopen = 3
+
+# Buffer sizes optimized for 1GB RAM
+net.core.rmem_max = 67108864
+net.core.wmem_max = 67108864
+net.core.rmem_default = 131072
+net.core.wmem_default = 131072
+
+# TCP memory settings
+net.ipv4.tcp_rmem = 4096 87380 67108864
+net.ipv4.tcp_wmem = 4096 65536 67108864
+net.ipv4.tcp_mem = 786432 1048576 1572864
+
+# TCP optimization
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_max_syn_backlog = 65536
+net.ipv4.tcp_synack_retries = 2
+net.ipv4.tcp_syn_retries = 3
+net.ipv4.tcp_retries2 = 8
+
+# Keepalive settings
+net.ipv4.tcp_keepalive_time = 300
+net.ipv4.tcp_keepalive_probes = 5
+net.ipv4.tcp_keepalive_intvl = 15
+
+# Network performance
+net.core.netdev_max_backlog = 65536
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_tw_buckets = 1440000
+net.ipv4.tcp_tw_reuse = 1
+SYSCTL
+
+    # Применяем настройки
+    sysctl -p
+    echo "✅ Оптимизированный BBR включен для 1GB RAM VPS"
 fi
 
+# Дополнительная оптимизация для NVMe
+if lsblk | grep -q nvme; then
+    echo "Обнаружен NVMe диск - применяем дополнительные оптимизации..."
+    # Оптимизация I/O для NVMe
+    echo 'vm.swappiness = 10' >> /etc/sysctl.conf
+    echo 'vm.dirty_ratio = 15' >> /etc/sysctl.conf
+    echo 'vm.dirty_background_ratio = 5' >> /etc/sysctl.conf
+    sysctl -p
+fi
+
+# ОПТИМИЗАЦИЯ СИСТЕМЫ ДЛЯ VPS
+echo "Применение системных оптимизаций..."
+
+# Увеличиваем лимиты файлов для большого количества соединений
+sed -i '/^\*.*soft.*nofile/d' /etc/security/limits.conf
+sed -i '/^\*.*hard.*nofile/d' /etc/security/limits.conf
+echo '* soft nofile 65535' >> /etc/security/limits.conf
+echo '* hard nofile 65535' >> /etc/security/limits.conf
+
+# Оптимизация для systemd services
+mkdir -p /etc/systemd/system.conf.d/
+cat << 'SYSTEMD' > /etc/systemd/system.conf.d/limits.conf
+[Manager]
+DefaultLimitNOFILE=65535
+DefaultTasksMax=65535
+SYSTEMD
+
+# Перезагружаем systemd
+systemctl daemon-reload
+
 # Очищаем системные логи и настраиваем хранение только в RAM
-journalctl --vacuum-time=1s --no-pager >/dev/null 2>&1
-find /var/log -type f -exec truncate -s0 {} \; 2>/dev/null || true
+journalctl --vacuum-time=1d --no-pager >/dev/null 2>&1
+find /var/log -maxdepth 1 -type f -name "*.log" -exec truncate -s0 {} \; 2>/dev/null || true
 if ! grep -q '^Storage=volatile' /etc/systemd/journald.conf; then
     sed -i 's/^#Storage=.*/Storage=volatile/' /etc/systemd/journald.conf
     systemctl restart systemd-journald
@@ -76,19 +157,21 @@ export uuid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/uuid/ {print $2}')
 export privatkey=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {print $2}')
 export shortsid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 
-# Создаем файл конфигурации Xray с Cloudflare маскировкой и DoH
-touch /usr/local/etc/xray/config.json
+# Финальная конфигурация Xray  VLESS + Reality + Vision с DoH Cloudflare маскировкой
 cat << EOF > /usr/local/etc/xray/config.json
 {
     "log": {
-        "loglevel": "warning"
+        "loglevel": "warning",
+        "dnsLog": false,
+        "access": "none"
     },
     "dns": {
         "servers": [
-            "https+local://1.1.1.1/dns-query",
             "1.1.1.1",
+            "8.8.8.8",
             {
-                "address": "https+local://1.1.1.1/dns-query",
+                "address": "1.1.1.1",
+                "port": 53,
                 "domains": [
                     "geosite:cn"
                 ],
@@ -96,46 +179,71 @@ cat << EOF > /usr/local/etc/xray/config.json
                     "geoip:cn"
                 ]
             },
-            "localhost"
-        ]
+            {
+                "address": "localhost",
+                "skipFallback": true
+            }
+        ],
+        "queryStrategy": "UseIPv4",
+        "disableCache": false,
+        "hosts": {
+            "geo.prod.do.dsp.mp.microsoft.com": "127.0.0.1",
+            "www.msftconnecttest.com": "127.0.0.1",
+            "ctldl.windowsupdate.com": "127.0.0.1",
+            "edge.microsoft.com": "127.0.0.1",
+            "telemetry.microsoft.com": "127.0.0.1",
+            "watson.telemetry.microsoft.com": "127.0.0.1",
+            "telemetry.google.com": "127.0.0.1",
+            "google-analytics.com": "127.0.0.1",
+            "stats.g.doubleclick.net": "127.0.0.1"
+        }
     },
     "routing": {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
             {
                 "type": "field",
+                "port": 53,
+                "outboundTag": "direct"
+            },
+            {
+                "type": "field",
+                "ip": [
+                    "1.1.1.1",
+                    "8.8.8.8",
+                    "1.0.0.1",
+                    "8.8.4.4"
+                ],
+                "outboundTag": "direct"
+            },
+            {
+                "type": "field",
                 "domain": [
-                    "geosite:category-ads-all"
+                    "domain:geo.prod.do.dsp.mp.microsoft.com",
+                    "domain:www.msftconnecttest.com",
+                    "domain:telemetry.microsoft.com",
+                    "domain:telemetry.google.com"
                 ],
                 "outboundTag": "block"
             },
             {
                 "type": "field",
-                "ip": [
-                    "1.1.1.1"
-                ],
-                "outboundTag": "proxy"
+                "domain": ["geosite:category-ads-all"],
+                "outboundTag": "block"
             },
             {
                 "type": "field",
-                "domain": [
-                    "geosite:cn"
-                ],
+                "domain": ["geosite:cn", "geosite:ru"],
                 "outboundTag": "direct"
             },
             {
                 "type": "field",
-                "ip": [
-                    "geoip:cn",
-                    "geoip:private"
-                ],
+                "ip": ["geoip:cn", "geoip:ru", "geoip:private"],
                 "outboundTag": "direct"
             },
             {
                 "type": "field",
-                "protocol": [
-                    "bittorrent"
-                ],
+                "protocol": ["bittorrent"],
                 "outboundTag": "block"
             }
         ]
@@ -180,10 +288,9 @@ cat << EOF > /usr/local/etc/xray/config.json
                 "enabled": true,
                 "destOverride": [
                     "http",
-                    "tls",
-                    "quic"
+                    "tls"
                 ],
-                "routeOnly": false
+                "routeOnly": true
             }
         }
     ],
@@ -197,47 +304,32 @@ cat << EOF > /usr/local/etc/xray/config.json
         },
         {
             "protocol": "blackhole",
-            "tag": "block"
-        },
-        {
-            "protocol": "freedom",
-            "tag": "proxy",
+            "tag": "block",
             "settings": {
-                "domainStrategy": "UseIP"
+                "response": {
+                    "type": "none"
+                }
             }
         }
     ],
     "policy": {
         "levels": {
             "0": {
-                "handshake": 3,
-                "connIdle": 180
+                "handshake": 2,
+                "connIdle": 300,
+                "uplinkOnly": 1,
+                "downlinkOnly": 1
             }
+        },
+        "system": {
+            "statsInboundUplink": false,
+            "statsInboundDownlink": false
         }
     }
 }
 EOF
 
-# Исполняемый файл для списка клиентов
-touch /usr/local/bin/listuser
-cat << 'EOF' > /usr/local/bin/listuser
-#!/bin/bash
-emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
-
-if [[ ${#emails[@]} -eq 0 ]]; then
-    echo "Список клиентов пуст"
-    exit 1
-fi
-
-echo "Список клиентов:"
-for i in "${!emails[@]}"; do
-    echo "$((i+1)). ${emails[$i]}"
-done
-EOF
-chmod +x /usr/local/bin/listuser
-
-# исполняемый файл для ссылки основного пользователя
-touch /usr/local/bin/mainuser
+# Исполняемый файл для ссылки основного пользователя
 cat << 'EOF' > /usr/local/bin/mainuser
 #!/bin/bash
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
@@ -247,53 +339,57 @@ pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
 sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
 ip=$(timeout 3 curl -4 -s icanhazip.com)
+
 link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#main"
+
 echo ""
 echo "Ссылка для подключения:"
 echo "$link"
 echo ""
-echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8 -s1
+echo "QR-код (компактный):"
+echo "$link" | qrencode -t UTF8 -o - -s 1 -m 0
 EOF
 chmod +x /usr/local/bin/mainuser
 
 # Исполняемый файл для создания новых клиентов
-touch /usr/local/bin/newuser
-cat << 'EOF' > /usr/local/bin/newuser
+cat << 'EOF' > /usr/local/bin/adduser
 #!/bin/bash
 read -p "Введите имя пользователя (email): " email
 
-    if [[ -z "$email" || "$email" == *" "* ]]; then
+if [[ -z "$email" || "$email" == *" "* ]]; then
     echo "Имя пользователя не может быть пустым или содержать пробелы. Попробуйте снова."
     exit 1
-    fi
+fi
+
 user_json=$(jq --arg email "$email" '.inbounds[0].settings.clients[] | select(.email == $email)' /usr/local/etc/xray/config.json)
 
 if [[ -z "$user_json" ]]; then
-uuid=$(xray uuid)
-jq --arg email "$email" --arg uuid "$uuid" '.inbounds[0].settings.clients += [{"email": $email, "id": $uuid, "flow": "xtls-rprx-vision"}]' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
-systemctl restart xray
-index=$(jq --arg email "$email" '.inbounds[0].settings.clients | to_entries[] | select(.value.email == $email) | .key'  /usr/local/etc/xray/config.json)
-protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
-port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
-uuid=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].id' /usr/local/etc/xray/config.json)
-pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
-sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
-username=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].email' /usr/local/etc/xray/config.json)
-sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
-ip=$(curl -4 -s icanhazip.com)
-link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$username"
-echo ""
-echo "Ссылка для подключения:"
-echo "$link"
-echo ""
-echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8 -s1
+    uuid=$(xray uuid)
+    jq --arg email "$email" --arg uuid "$uuid" '.inbounds[0].settings.clients += [{"email": $email, "id": $uuid, "flow": "xtls-rprx-vision"}]' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
+    systemctl restart xray
+    index=$(jq --arg email "$email" '.inbounds[0].settings.clients | to_entries[] | select(.value.email == $email) | .key'  /usr/local/etc/xray/config.json)
+    protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
+    port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
+    uuid=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].id' /usr/local/etc/xray/config.json)
+    pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
+    sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
+    username=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].email' /usr/local/etc/xray/config.json)
+    sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
+    ip=$(curl -4 -s icanhazip.com)
+    
+    link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$username"
+    
+    echo ""
+    echo "Ссылка для подключения:"
+    echo "$link"
+    echo ""
+    echo "QR-код (компактный):"
+    echo "$link" | qrencode -t UTF8 -o - -s 1 -m 0
 else
-echo "Пользователь с таким именем уже существует. Попробуйте снова." 
+    echo "Пользователь с таким именем уже существует. Попробуйте снова." 
 fi
 EOF
-chmod +x /usr/local/bin/newuser
+chmod +x /usr/local/bin/adduser
 
 # Исполняемый файл для удаления клиентов
 touch /usr/local/bin/rmuser
@@ -331,7 +427,6 @@ EOF
 chmod +x /usr/local/bin/rmuser
 
 # Исполняемый файл для вывода списка пользователей и создания ссылок
-touch /usr/local/bin/sharelink
 cat << 'EOF' > /usr/local/bin/sharelink
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].settings.clients[].email' /usr/local/etc/xray/config.json))
@@ -358,13 +453,15 @@ sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 username=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].email' /usr/local/etc/xray/config.json)
 sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
 ip=$(curl -4 -s icanhazip.com)
+
 link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$username"
+
 echo ""
 echo "Ссылка для подключения:"
 echo "$link"
 echo ""
-echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8 -s1
+echo "QR-код (компактный):"
+echo "$link" | qrencode -t UTF8 -o - -s 1 -m 0
 EOF
 chmod +x /usr/local/bin/sharelink
 
@@ -380,7 +477,7 @@ cat << 'EOF' > $HOME/help
 Команды для управления пользователями Xray:
 
     mainuser - выводит ссылку для подключения основного пользователя
-    newuser - создает нового пользователя
+    adduser - создает нового пользователя
     rmuser - удаление пользователей
     sharelink - выводит список пользователей и позволяет создать для них ссылки для подключения
     listuser - выводит список клиентов
@@ -394,7 +491,8 @@ cat << 'EOF' > $HOME/help
     systemctl restart xray
 
 Текущая конфигурация: VLESS + REALITY + Vision
-Маскировка под: www.cloudflare.com DNS: Cloudflare DoH (https://1.1.1.1/dns-query)
+Маскировка под: www.cloudflare.com
+DNS: Cloudflare DoH (https://1.1.1.1/dns-query)
 
 Особенности конфигурации:
 - DNS через DoH для шифрования запросов
