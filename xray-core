@@ -958,15 +958,16 @@ cat << 'EOF' > $HOME/help
     openssh    - открывает SSH доступ для введённого IP и установит ufw и fail2ban
     closessh   - закроет все порты кроме 443/TCP
     sharelink  - показывает ссылки и QR пользователя для подключения
-    
 
 Файл конфигурации находится по адресу:
 
     /usr/local/etc/xray/config.json
 
-Команда для перезагрузки ядра Xray:
+Команды для управления ядра Xray:
 
-    systemctl restart xray
+    systemctl restart xray - перезапустить ядро
+    systemctl stop xray    - остановить ядро
+    systemctl start xray   - запустить ядро
 
 Текущая конфигурация: VLESS + REALITY + Vision
 Два пользователя по умолчанию:
