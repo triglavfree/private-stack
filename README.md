@@ -63,12 +63,18 @@ cat help      # Вывести список доступных команд
 ## Удаление
 ```
 systemctl stop xray
+systemctl disable xray
+rm /etc/systemd/system/xray.service
+systemctl daemon-reexec
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove
 rm /usr/local/etc/xray/config.json
 rm /usr/local/etc/xray/.keys
-rm /usr/local/bin/userlist
+rm /usr/local/bin/listuser
 rm /usr/local/bin/mainuser
 rm /usr/local/bin/newuser
 rm /usr/local/bin/rmuser
 rm /usr/local/bin/sharelink
+rm -rf /usr/local/etc/xray/
+rm -rf /etc/xray/
+rm -rf /var/log/xray/
 ```
