@@ -94,14 +94,6 @@ SYSTEMD
 # Перезагружаем systemd
 systemctl daemon-reload
 
-# Очищаем системные логи и настраиваем хранение только в RAM
-journalctl --vacuum-time=1d --no-pager >/dev/null 2>&1
-find /var/log -maxdepth 1 -type f -name "*.log" -exec truncate -s0 {} \; 2>/dev/null || true
-if ! grep -q '^Storage=volatile' /etc/systemd/journald.conf; then
-    sed -i 's/^#Storage=.*/Storage=volatile/' /etc/systemd/journald.conf
-    systemctl restart systemd-journald
-fi
-
 # Убедимся что geosite.dat и geoip.dat существуют
 mkdir -p /usr/local/share/xray
 cd /usr/local/share/xray
@@ -155,6 +147,14 @@ setup_swap_if_needed() {
 
 # ВЫЗЫВАЕМ ФУНКЦИЮ создания swap
 setup_swap_if_needed
+
+# Очищаем системные логи и настраиваем хранение только в RAM
+journalctl --vacuum-time=1d --no-pager >/dev/null 2>&1
+find /var/log -maxdepth 1 -type f -name "*.log" -exec truncate -s0 {} \; 2>/dev/null || true
+if ! grep -q '^Storage=volatile' /etc/systemd/journald.conf; then
+    sed -i 's/^#Storage=.*/Storage=volatile/' /etc/systemd/journald.conf
+    systemctl restart systemd-journald
+fi
 
 # Устанавливаем ядро Xray
 bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
