@@ -11,7 +11,7 @@
 
 
 
-# 🛡️ [VLESS](https://xtls.github.io/ru/development/protocols/vless.html) [REALITY](https://xtls.github.io/ru/config/transport.html) VISION
+# 🛡️ [VLESS](https://xtls.github.io/ru/development/protocols/vless.html) [REALITY](https://xtls.github.io/ru/config/transport.html) [VISION](https://deepwiki.com/XTLS/Xray-examples/2.2-vless-+-tcp-+-xtls-vision)
 > НЕТ ЛОГОВ. НЕТ ТРЕКИНГА. НЕТ КОМПРОМИССОВ. ✅ СКРИПТ ПОЛНОСТЬЮ ОПТИМИЗИРОВАН ДЛЯ 1GB RAM VPS
 
 
@@ -70,21 +70,3 @@ cat help      # Вывести список доступных пользова�
 - Трафик **маскируется под HTTPS-соединение к** `www.cloudflare.com` **(obfuscation)**
 - Все порты, кроме 443/TCP, заблокированы фаерволом `ufw`
 - Вся настройка выполняется только через консоль хостинга
-
-## Удаление
-```
-systemctl stop xray
-systemctl disable xray
-systemctl daemon-reexec
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove
-rm /usr/local/etc/xray/config.json
-rm /usr/local/etc/xray/.keys
-rm /usr/local/bin/listuser
-rm /usr/local/bin/mainuser
-rm /usr/local/bin/newuser
-rm /usr/local/bin/rmuser
-rm /usr/local/bin/sharelink
-rm -rf /usr/local/etc/xray/
-rm -rf /etc/xray/
-rm -rf /var/log/xray/
-```
