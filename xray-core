@@ -160,7 +160,7 @@ echo "Ссылка для подключения:"
 echo "$link"
 echo ""
 echo "QR-код:"
-echo "$link" | qrencode -t ansiutf8 -s 1
+echo "$link" | qrencode -t ansiutf8 -s1
 EOF
 chmod +x /usr/local/bin/mainuser
 
@@ -196,7 +196,7 @@ echo "Ссылка для подключения":
 echo "$link"
 echo ""
 echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8
+echo ${link} | qrencode -t ansiutf8 -s1
 else
 echo "Пользователь с таким именем уже существует. Попробуйте снова." 
 fi
@@ -273,7 +273,7 @@ echo "Ссылка для подключения":
 echo "$link"
 echo ""
 echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8
+echo ${link} | qrencode -t ansiutf8 -s1
 EOF
 chmod +x /usr/local/bin/sharelink
 
