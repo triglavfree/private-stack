@@ -102,6 +102,17 @@ if ! grep -q '^Storage=volatile' /etc/systemd/journald.conf; then
     systemctl restart systemd-journald
 fi
 
+# Убедимся что geosite.dat и geoip.dat существуют
+mkdir -p /usr/local/share/xray
+cd /usr/local/share/xray
+
+# Скачаем актуальные geo-файлы если их нет
+if [ ! -f "geosite.dat" ] || [ ! -f "geoip.dat" ]; then
+    echo "Скачиваем актуальные geo-файлы..."
+    wget -q -O geoip.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
+    wget -q -O geosite.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+    echo "✅ Geo-файлы обновлены"
+fi
 
 # Swap: 2 ГБ если RAM ≤ 1 ГБ и swap отсутствует
 setup_swap_if_needed() {
@@ -329,7 +340,7 @@ cat << EOF > /usr/local/etc/xray/config.json
 }
 EOF
 
-# Исполняемый файл для ссылки основного пользователя
+# Исполняемый файл для создания mainuser
 cat << 'EOF' > /usr/local/bin/mainuser
 #!/bin/bash
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
@@ -346,8 +357,8 @@ echo ""
 echo "Ссылка для подключения:"
 echo "$link"
 echo ""
-echo "QR-код (компактный):"
-echo "$link" | qrencode -t UTF8 -o - -s 1 -m 0
+echo "QR-код:"
+echo "$link" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
 
@@ -383,8 +394,8 @@ if [[ -z "$user_json" ]]; then
     echo "Ссылка для подключения:"
     echo "$link"
     echo ""
-    echo "QR-код (компактный):"
-    echo "$link" | qrencode -t UTF8 -o - -s 1 -m 0
+    echo "QR-код:"
+    echo "$link" | qrencode -t ansiutf8
 else
     echo "Пользователь с таким именем уже существует. Попробуйте снова." 
 fi
@@ -475,8 +486,8 @@ echo ""
 echo "Ссылка для подключения:"
 echo "$link"
 echo ""
-echo "QR-код (компактный):"
-echo "$link" | qrencode -t UTF8 -o - -s 1 -m 0
+echo "QR-код:"
+echo "$link" | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/sharelink
 
@@ -516,4 +527,3 @@ DNS: Cloudflare DoH (https://1.1.1.1/dns-query)
 - Sniffing для определения доменов
 
 EOF
-#clear
