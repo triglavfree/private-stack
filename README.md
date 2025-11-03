@@ -23,7 +23,8 @@
 Сделано для тех, кто ценит приватность
 </div>
 
-##  🚀 УСТАНОВКА
+
+##  🎯 УСТАНОВКА
 ###  [xray-core](https://github.com/XTLS/Xray-core)
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/xray-core | bash
@@ -127,7 +128,7 @@ Fingerprint: Firefox
 - **Стандартный** - Firefox fingerprint + Cloudflare маскировка
 - **Кастомный** - Ручной ввод SNI и fingerprint
 
-
+---
 <div align="center">
 🔐 НЕТ ЛОГОВ • 🛡️ НЕТ ТРЕКИНГА • ⚡ НЕТ КОМПРОМИССОВ
 
