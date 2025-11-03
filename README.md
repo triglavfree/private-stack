@@ -3,13 +3,13 @@
 ![Xray](https://img.shields.io/badge/Xray-1.8.4-8A2BE2)
 ![sing-box](https://img.shields.io/badge/sing--box-v1.12.12-8A2BE2?logo=github&logoColor=white)
 ![VLESS](https://img.shields.io/badge/VLESS-Protocol-green)
-![Reality](https://img.shields.io/badge/Reality-1.8.0-orange)
+![Reality](https://img.shields.io/badge/Reality-Transport-orange)
 ![BBR](https://img.shields.io/badge/BBR-Optimized-yellow)
 ![VPS](https://img.shields.io/badge/VPS-1GB_RAM-lightgrey)
 [![DeepSeek AI](https://img.shields.io/badge/Chat-DeepSeek%20AI-007BFF?logo=ai&logoColor=white)](https://chat.deepseek.com)
 
 
-# 🛡️ [VLESS](https://xtls.github.io/ru/config/outbounds/vless.html) REALITY VISION
+# 🛡️ [VLESS](https://xtls.github.io/ru/development/protocols/vless.html) [REALITY](https://xtls.github.io/ru/config/transport.html) VISION
 > НЕТ ЛОГОВ. НЕТ ТРЕКИНГА. НЕТ КОМПРОМИССОВ. ✅ СКРИПТ ПОЛНОСТЬЮ ОПТИМИЗИРОВАН ДЛЯ 1GB RAM VPS
 
 
