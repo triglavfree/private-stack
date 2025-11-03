@@ -1,7 +1,7 @@
 [![Project X](https://img.shields.io/badge/Project-X-000000?logo=github&logoColor=white)](https://xtls.github.io/ru/config/)
 [![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/24.04/)
 ![Xray](https://img.shields.io/badge/Xray-1.8.4-8A2BE2)
-![sing-box](https://img.shields.io/badge/sing--box-v1.12.12-8A2BE2?logo=github&logoColor=white)
+![sing-box](https://img.shields.io/badge/sing--box-1.12.12-8A2BE2?logo=github&logoColor=white)
 ![VLESS](https://img.shields.io/badge/VLESS-Protocol-green)
 ![Reality](https://img.shields.io/badge/Reality-Transport-orange)
 ![BBR](https://img.shields.io/badge/BBR-Optimized-yellow)
