@@ -426,6 +426,21 @@ echo "Клиент $selected_email удалён."
 EOF
 chmod +x /usr/local/bin/rmuser
 
+# ДОБАВИТЬ В КОНЕЦ СКРИПТА:
+cat << 'EOF' > /usr/local/bin/listuser
+#!/bin/bash
+emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
+if [[ ${#emails[@]} -eq 0 ]]; then
+    echo "Список клиентов пуст"
+    exit 1
+fi
+echo "Список клиентов:"
+for i in "${!emails[@]}"; do
+    echo "$((i+1)). ${emails[$i]}"
+done
+EOF
+chmod +x /usr/local/bin/listuser
+
 # Исполняемый файл для вывода списка пользователей и создания ссылок
 cat << 'EOF' > /usr/local/bin/sharelink
 #!/bin/bash
