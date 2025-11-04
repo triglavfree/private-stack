@@ -1,5 +1,5 @@
 [![Project X](https://img.shields.io/badge/Project-X-000000?logo=github&logoColor=white)](https://xtls.github.io/ru/config/)
-[![WireGuard Installer](https://img.shields.io/badge/WireGuard%20Installer-nyr%2Fwireguard--install-blue?logo=github)](https://github.com/Nyr/wireguard-install)
+[![WireGuard Installer](https://img.shields.io/badge/WireGuard%20Installer-nyr-blue?logo=github)](https://github.com/Nyr/wireguard-install)
 [![Xray-Core](https://img.shields.io/badge/Xray%20Core-25.10.15-8A2BE2)](https://github.com/XTLS/Xray-core)
 [![sing-box](https://img.shields.io/badge/sing--box-1.12.12-8A2BE2?logo=github&logoColor=white)](https://github.com/SagerNet/sing-box)
 ![VLESS](https://img.shields.io/badge/VLESS-Protocol-green)
