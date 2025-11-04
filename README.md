@@ -11,7 +11,7 @@
 [![DeepSeek AI](https://img.shields.io/badge/Chat-DeepSeek%20AI-007BFF?logo=ai&logoColor=white)](https://chat.deepseek.com)
 [![GitHub last commit](https://img.shields.io/github/last-commit/triglavfree/private-stack)](https://github.com/triglavfree/private-stack)
 
-# PRIVATE STACK 🛡️ [VLESS](https://xtls.github.io/ru/development/protocols/vless.html) + [REALITY](https://xtls.github.io/ru/config/transport.html) + [VISION](https://deepwiki.com/XTLS/Xray-examples/2.2-vless-+-tcp-+-xtls-vision)
+# PRIVATE STACK 🛡️ [VLESS](https://xtls.github.io/ru/development/protocols/vless.html) + [REALITY](https://xtls.github.io/ru/config/transport.html) + [VISION](https://deepwiki.com/XTLS/Xray-examples/2.2-vless-+-tcp-+-xtls-vision). [WIREGUARD](https://github.com/Nyr/wireguard-install)
 <div align="center">
 🔐 НЕТ ЛОГОВ • 🛡️ НЕТ ТРЕКИНГА • ⚡ НЕТ КОМПРОМИССОВ
 
