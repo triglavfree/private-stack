@@ -432,7 +432,6 @@ chmod +x /usr/local/bin/iosuser
 # Функция для создания новых пользователей
 cat << 'EOF' > /usr/local/bin/adduser
 #!/bin/bash
-
 # Функция для выбора типа пользователя
 choose_user_type() {
     echo "Выберите тип пользователя:"
@@ -440,9 +439,7 @@ choose_user_type() {
     echo "2) iOS (iCloud маскировка)" 
     echo "3) Android (Chrome маскировка)"
     echo "4) Другой (ручной ввод SNI)"
-    
     read -p "Введите номер [1-4]: " type_choice
-    
     case $type_choice in
         1)
             USER_TYPE="standard"
@@ -465,6 +462,10 @@ choose_user_type() {
             USER_TYPE="custom"
             SNI="$custom_sni"
             FP="$custom_fp"
+            if [[ -z "$SNI" || -z "$FP" ]]; then
+                echo "Ошибка: SNI и fingerprint не могут быть пустыми"
+                exit 1
+            fi
             ;;
         *)
             echo "Ошибка: неверный выбор"
@@ -496,7 +497,6 @@ choose_user_type
 
 # Запрос имени пользователя или генерация
 read -p "Введите имя пользователя (или Enter для автогенерации): " email_input
-
 if [[ -z "$email_input" ]]; then
     email=$(generate_username)
 else
@@ -504,27 +504,36 @@ else
 fi
 
 # Проверка на дубликаты
-user_json=$(jq --arg email "$email" '.inbounds[0].settings.clients[] | select(.email == $email)' /usr/local/etc/xray/config.json 2>/dev/null)
-
-if [[ -n "$user_json" ]]; then
+if jq --arg email "$email" '.inbounds[0].settings.clients[] | select(.email == $email)' /usr/local/etc/xray/config.json &>/dev/null; then
     echo "Ошибка: пользователь '$email' уже существует!"
     exit 1
 fi
 
-# Создаем пользователя
-uuid=$(xray uuid)
+# Генерируем UUID заранее
+uuid=$(xray uuid 2>/dev/null || xray uuid)
+if [[ -z "$uuid" ]]; then
+    echo "Ошибка: не удалось сгенерировать UUID"
+    exit 1
+fi
+
+# Создаем пользователя - сначала обновляем конфиг
 jq --arg email "$email" --arg uuid "$uuid" '.inbounds[0].settings.clients += [{"email": $email, "id": $uuid, "flow": "xtls-rprx-vision"}]' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
 
-# Перезапускаем Xray
-systemctl restart xray
+# Получаем необходимые данные для ссылки ДО перезапуска
+protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json 2>/dev/null)
+port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json 2>/dev/null)
+pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}' 2>/dev/null)
+sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}' 2>/dev/null)
+ip=$(timeout 3 curl -4 -s icanhazip.com 2>/dev/null || echo "YOUR_SERVER_IP")
+
+# Перезапускаем Xray в фоновом режиме с задержкой
+{
+    sleep 2
+    systemctl restart xray
+    sleep 3
+} &
 
 # Генерируем ссылку
-protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
-port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
-pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
-sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
-ip=$(curl -4 -s icanhazip.com)
-
 link="$protocol://$uuid@$ip:$port?security=reality&sni=$SNI&fp=$FP&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
 
 # Выводим результат
@@ -535,13 +544,11 @@ echo "🔧 Тип: $USER_TYPE"
 echo "🌐 Маскировка: $SNI"
 echo "📱 Fingerprint: $FP"
 echo ""
-
 echo "Ссылка для подключения:"
 echo "$link"
 echo ""
-
 echo "QR-код:"
-echo "$link" | qrencode -t ansiutf8
+echo "$link" | qrencode -t ansiutf8 -s 2 -m 2
 
 # Дополнительная информация для iOS пользователей
 if [[ "$USER_TYPE" == "ios" ]]; then
@@ -554,9 +561,13 @@ if [[ "$USER_TYPE" == "ios" ]]; then
     echo "Short ID: $sid"
     echo "SNI: $SNI"
     echo "Fingerprint: $FP"
+    echo ""
+    echo "💡 ВАЖНО: В Shadowrocket включите опцию 'Use Remote DNS' и режим 'VPN'!"
 fi
-EOF
-chmod +x /usr/local/bin/adduser
+
+echo ""
+echo "🔄 Xray перезапускается в фоновом режиме (это может занять 5-10 секунд)"
+echo "🔍 Проверить статус: systemctl status xray"
 
 # Исполняемый файл для удаления клиентов
 touch /usr/local/bin/rmuser
