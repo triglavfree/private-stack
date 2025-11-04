@@ -46,13 +46,13 @@
 
 
 ## 🚀 ЗАПУСК СКРИПТА
-###  [xray-core](https://github.com/XTLS/Xray-core)
+###  [xray-core](https://github.com/XTLS/Xray-core) *Индивидуальный*
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/xray-core | bash
 ```
 >⚠️ Не устанавливайте оба на один сервер — они конфликтуют за порт 443. 
 
-###  [sing-box](https://github.com/SagerNet/sing-box)
+###  [sing-box](https://github.com/SagerNet/sing-box) *Групповой*
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-box | bash
 ```
