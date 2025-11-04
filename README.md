@@ -45,7 +45,7 @@
 > Доступ к VPS останется только из консоли хостера в Панели Управления VPS.
 
 
-## 🚀 УСТАНОВКА
+## 🚀 ЗАПУСК СКРИПТА
 ###  [xray-core](https://github.com/XTLS/Xray-core)
 ```bash
 curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/xray-core | bash
