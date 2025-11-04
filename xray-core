@@ -432,7 +432,76 @@ chmod +x /usr/local/bin/iosuser
 # Функция для создания новых пользователей
 cat << 'EOF' > /usr/local/bin/adduser
 #!/bin/bash
-# ... [весь код выбора типа пользователя и генерации имени остается без изменений] ...
+# Функция для выбора типа пользователя
+choose_user_type() {
+    echo "Выберите тип пользователя:"
+    echo "1) Стандартный (Cloudflare маскировка)"
+    echo "2) iOS (iCloud маскировка)" 
+    echo "3) Android (Chrome маскировка)"
+    echo "4) Другой (ручной ввод SNI)"
+    read -p "Введите номер [1-4]: " type_choice
+    case $type_choice in
+        1)
+            USER_TYPE="standard"
+            SNI="www.cloudflare.com"
+            FP="firefox"
+            ;;
+        2)
+            USER_TYPE="ios"
+            SNI="www.icloud.com"
+            FP="ios"
+            ;;
+        3)
+            USER_TYPE="android" 
+            SNI="www.google.com"
+            FP="chrome"
+            ;;
+        4)
+            read -p "Введите свой SNI (например: github.com): " custom_sni
+            read -p "Введите fingerprint [firefox/chrome/ios/safari]: " custom_fp
+            USER_TYPE="custom"
+            SNI="$custom_sni"
+            FP="$custom_fp"
+            if [[ -z "$SNI" || -z "$FP" ]]; then
+                echo "Ошибка: SNI и fingerprint не могут быть пустыми"
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Ошибка: неверный выбор"
+            exit 1
+            ;;
+    esac
+}
+
+# Функция для генерации имени пользователя
+generate_username() {
+    case $USER_TYPE in
+        "standard")
+            echo "user_$(openssl rand -hex 3)"
+            ;;
+        "ios")
+            echo "ios_$(openssl rand -hex 3)" 
+            ;;
+        "android")
+            echo "android_$(openssl rand -hex 3)"
+            ;;
+        "custom")
+            echo "custom_$(openssl rand -hex 3)"
+            ;;
+    esac
+}
+
+# Основная логика
+choose_user_type
+
+# Запрос имени пользователя или генерация
+read -p "Введите имя пользователя (или Enter для автогенерации): " email_input
+if [[ -z "$email_input" ]]; then
+    email=$(generate_username)
+else
+    email="$email_input"
+fi
 
 # Проверка на дубликаты
 if jq --arg email "$email" '.inbounds[0].settings.clients[] | select(.email == $email)' /usr/local/etc/xray/config.json &>/dev/null; then
@@ -450,21 +519,21 @@ fi
 # Создаем пользователя - сначала обновляем конфиг
 jq --arg email "$email" --arg uuid "$uuid" '.inbounds[0].settings.clients += [{"email": $email, "id": $uuid, "flow": "xtls-rprx-vision"}]' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
 
-# 🔑 КРИТИЧЕСКИ ВАЖНО: Получаем ВСЕ необходимые данные ДО перезапуска!
+# Получаем необходимые данные для ссылки ДО перезапуска
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json 2>/dev/null)
 port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json 2>/dev/null)
 pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}' 2>/dev/null)
 sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}' 2>/dev/null)
 ip=$(timeout 3 curl -4 -s icanhazip.com 2>/dev/null || echo "YOUR_SERVER_IP")
 
-# 🚀 Перезапускаем Xray в фоновом режиме
+# Перезапускаем Xray в фоновом режиме с задержкой
 {
     sleep 2
     systemctl restart xray
     sleep 3
 } &
 
-# Генерируем ссылку (уже с собранными данными)
+# Генерируем ссылку
 link="$protocol://$uuid@$ip:$port?security=reality&sni=$SNI&fp=$FP&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$email"
 
 # Выводим результат
@@ -481,12 +550,26 @@ echo ""
 echo "QR-код:"
 echo "$link" | qrencode -t ansiutf8 -s 2 -m 2
 
-# ... [остальной код вывода для iOS] ...
+# Дополнительная информация для iOS пользователей
+if [[ "$USER_TYPE" == "ios" ]]; then
+    echo ""
+    echo "=== ДЛЯ НАСТРОЙКИ В SHADOWROCKET ==="
+    echo "Сервер: $ip"
+    echo "Порт: $port" 
+    echo "UUID: $uuid"
+    echo "Public Key: $pbk"
+    echo "Short ID: $sid"
+    echo "SNI: $SNI"
+    echo "Fingerprint: $FP"
+    echo ""
+    echo "💡 ВАЖНО: В Shadowrocket включите опцию 'Use Remote DNS' и режим 'VPN'!"
+fi
 
 echo ""
 echo "🔄 Xray перезапускается в фоновом режиме (это может занять 5-10 секунд)"
 echo "🔍 Проверить статус: systemctl status xray"
 EOF
+
 chmod +x /usr/local/bin/adduser
 
 # Исполняемый файл для удаления клиентов
@@ -868,7 +951,6 @@ chmod +x /usr/local/bin/status
 
 # Перезагружаем xray
 systemctl restart xray
-
 clear
 echo "Xray-core успешно установлен"
 mainuser
@@ -889,16 +971,14 @@ cat << 'EOF' > $HOME/help
     openssh    - открывает SSH доступ для введённого IP и установит ufw и fail2ban
     closessh   - закроет все порты кроме 443/TCP
     sharelink  - показывает ссылки и QR пользователя для подключения
-
+    
 Файл конфигурации находится по адресу:
 
     /usr/local/etc/xray/config.json
 
-Команды для управления ядра Xray:
+Команда для перезагрузки ядра Xray:
 
-    systemctl restart xray - перезапустить ядро
-    systemctl stop xray    - остановить ядро
-    systemctl start xray   - запустить ядро
+    systemctl restart xray
 
 Текущая конфигурация: VLESS + REALITY + Vision
 Два пользователя по умолчанию:
@@ -917,5 +997,4 @@ DNS: Cloudflare DoH (https://1.1.1.1/dns-query)
 - Разделение трафика (китайские сайты идут напрямую)
 - Блокировка рекламы и BitTorrent
 - Sniffing для определения доменов
-
 EOF
