@@ -1,1 +1,2 @@
-# Reporting a potential Vulnerability
+# КАЖДЫЙ НЕСЁТ ПЕРСОНАЛЬНУЮ ОТВЕТСТВЕННОСТЬ!
+# БУДЬ ОСОЗНАННЫМ!
