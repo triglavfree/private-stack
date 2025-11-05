@@ -947,7 +947,7 @@ load=$(uptime | awk -F'load average:' '{print $2}' | xargs)
 echo -e "   Нагрузка: $load"
 
 echo -e "\n${CYAN}==============${NC}"
-echo -e "${CYAN}Команды: mainuser, iosuser, adduser${NC}"
+echo -e "${CYAN}Команды: update, closessh, openssh, mainuser, iosuser, adduser, rmuser, listuser, sharelink${NC}"
 EOF
 
 chmod +x /usr/local/bin/status
