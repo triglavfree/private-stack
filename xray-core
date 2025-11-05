@@ -14,7 +14,7 @@ fi
 
 # Обновление системы и установка пакетов
 apt update
-apt install qrencode curl jq -y
+apt install net-tools qrencode curl jq -y
 
 # УЛУЧШЕННАЯ НАСТРОЙКА BBR ДЛЯ МАЛОМОЩНЫХ VPS
 echo "Настройка оптимизированного BBR для 1GB RAM VPS..."
