@@ -4,7 +4,7 @@
 [![Xray-Core](https://img.shields.io/badge/Xray%20Core-25.10.15-8A2BE2)](https://github.com/XTLS/Xray-core)
 [![sing-box](https://img.shields.io/badge/sing--box-1.12.12-8A2BE2?logo=github&logoColor=white)](https://github.com/SagerNet/sing-box)
 ![VLESS](https://img.shields.io/badge/VLESS-Protocol-green)
-![Reality](https://img.shields.io/badge/Reality-Transport-orange)
+![Reality](https://img.shields.io/badge/Reality-Transport-green)
 ![Vision](https://img.shields.io/badge/Vision-Encryption-blue)
 ![VPS](https://img.shields.io/badge/VPS-1GB_RAM-lightgrey)
 ![BBR](https://img.shields.io/badge/BBR-Optimized-yellow)
