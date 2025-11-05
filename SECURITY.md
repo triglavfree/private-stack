@@ -1,1 +1,1 @@
-Reporting a potential Vulnerability
+# Reporting a potential Vulnerability
