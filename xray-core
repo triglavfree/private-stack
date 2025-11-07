@@ -361,8 +361,8 @@ cat > /usr/local/etc/xray/config.json << EOF
             "0": {
                 "handshake": 2,
                 "connIdle": 300,
-                "uplinkOnly": 1,
-                "downlinkOnly": 1
+                "uplinkOnly": 5,
+                "downlinkOnly": 10
             }
         },
         "system": {
