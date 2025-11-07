@@ -322,7 +322,7 @@ cat > /usr/local/etc/xray/config.json << EOF
                     "privateKey": "$PRIVATE_KEY",
                     "minClientVer": "",
                     "maxClientVer": "",
-                    "maxTimeDiff": 0,
+                    "maxTimeDiff": 30,
                     "shortIds": [
                         "$SHORT_ID"
                     ]
