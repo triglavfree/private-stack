@@ -101,6 +101,7 @@ curl -sL https://raw.githubusercontent.com/triglavfree/private-stack/main/sing-b
 ```yaml
 mainuser      # выводит ссылку для подключения основного пользователя (Cloudflare)
 iosuser       # выводит ссылку для iOS устройства (iCloud маскировка)
+githubuser    # выводит ссылку для подключения пользователя (Github)
 adduser       # создает нового пользователя
 listuser      # выводит список клиентов
 rmuser        # удаление пользователей
