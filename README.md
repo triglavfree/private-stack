@@ -2,7 +2,7 @@
 [![WireGuard Installer](https://img.shields.io/badge/WireGuard%20Installer-nyr-blue?logo=github)](https://github.com/Nyr/wireguard-install)
 [![wireguard-go](https://img.shields.io/badge/WireGuard%20Go-blue?logo=github)](https://github.com/WireGuard/wireguard-go)
 [![Xray-Core](https://img.shields.io/badge/Xray%20Core-25.10.15-8A2BE2)](https://github.com/XTLS/Xray-core)
-[![V2Fly](https://img.shields.io/badge/V2Fly-Proxy%20Platform-brightgreen?logo=github)](https://github.com/v2fly/v2ray-core)
+[![V2Fly](https://img.shields.io/badge/V2Fly-Community--Driven%20Edition-blue?logo=github)](https://github.com/v2fly)
 [![sing-box](https://img.shields.io/badge/sing--box-1.12.12-8A2BE2?logo=github&logoColor=white)](https://github.com/SagerNet/sing-box)
 ![VLESS](https://img.shields.io/badge/VLESS-Protocol-green)
 ![Reality](https://img.shields.io/badge/Reality-Transport-green)
