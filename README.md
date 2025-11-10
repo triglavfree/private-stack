@@ -154,6 +154,7 @@ Fingerprint: Firefox
 🔧 **Кастомные профили (adduser)**
 - **Android** - Chrome fingerprint + Google маскировка
 - **Стандартный** - Firefox fingerprint + Cloudflare маскировка
+- **Github** - Firefox fingerprint + Github маскировка
 - **Другой** - Ручной ввод SNI и fingerprint
 
 ---
