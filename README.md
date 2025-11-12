@@ -16,6 +16,7 @@
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-007ACC?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI4IiBmaWxsPSIjMDA3QUNDIi8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iNiIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjE1IiBjeT0iOSIgcj0iMiIgZmlsbD0iIzAwN0FDQyIvPjxjaXJjbGUgY3g9IjkiIGN5PSIxNSIgcj0iMiIgZmlsbD0iIzAwN0FDQyIvPjxjaXJjbGUgY3g9IjE1IiBjeT0iMTUiIHI9IjIiIGZpbGw9IiMwMDdBQ0MiLz48Y2lyY2xlIGN4PSI5IiBjeT0iOSIgcj0iMiIgZmlsbD0iIzAwN0FDQyIvPjwvc3ZnPg==&logoColor=white&label=&labelColor=black)](https://deepwiki.com/XTLS/Xray-core)
 [![DeepSeek AI](https://img.shields.io/badge/Chat-DeepSeek%20AI-007BFF?logo=ai&logoColor=white)](https://chat.deepseek.com)
 
+
 # PRIVATE STACK 🛡️ [VLESS](https://xtls.github.io/ru/development/protocols/vless.html) + [REALITY](https://xtls.github.io/ru/config/transport.html) + [VISION](https://deepwiki.com/XTLS/Xray-examples/2.2-vless-+-tcp-+-xtls-vision) 
 <div align="center">
 🔐 НЕТ ЛОГОВ • 🛡️ НЕТ ТРЕКИНГА • ⚡ НЕТ КОМПРОМИССОВ
