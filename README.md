@@ -1,3 +1,4 @@
+[![Linux Kernel](https://img.shields.io/badge/Linux%20Kernel-%E2%98%85%205.17%2B-blue?style=flat-square&logo=linux&labelColor=000000&color=007A33&logoColor=white)](https://github.com/torvalds/linux)
 [![Hiddify-Manager](https://img.shields.io/github/v/release/hiddify/hiddify-manager?style=flat-square&logo=github&label=Hiddify-Manager&color=red&labelColor=fffffft&logoColor=ffffff)](https://github.com/hiddify/hiddify-manager/releases)
 [![Project X](https://img.shields.io/badge/Project-X-000000?logo=github&logoColor=white)](https://xtls.github.io/ru/config/)
 [![WireGuard Installer](https://img.shields.io/badge/WireGuard%20Installer-nyr-blue?logo=github)](https://github.com/Nyr/wireguard-install)
