@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Colors for output
+# Цвета для вывода
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Function for colored output
+# Функции для цветного вывода
 print_status() {
     echo -e "${GREEN}[INFO]${NC} $1"
 }
@@ -19,53 +19,57 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check if running as root
+# Проверка запуска от root
 if [ "$EUID" -ne 0 ]; then 
-    print_error "Please run as root"
+    print_error "Запустите скрипт от root: sudo bash $0"
     exit 1
 fi
 
-print_status "Starting VPS optimization script for Ubuntu 24.04 Minimal"
+print_status "Начало настройки VPS Ubuntu 24.04 Minimal"
 
-# Step 1: System update
-print_status "Step 1: Updating system packages..."
+# Шаг 1: Обновление системы
+print_status "Шаг 1: Обновление системных пакетов..."
 apt update && apt full-upgrade -y
 if [ $? -eq 0 ]; then
-    print_status "System update completed successfully"
+    print_status "Система успешно обновлена"
 else
-    print_error "System update failed"
+    print_error "Ошибка обновления системы"
     exit 1
 fi
 
-# Step 2: Install essential packages
-print_status "Step 2: Installing essential packages..."
+# Шаг 2: Установка необходимых пакетов
+print_status "Шаг 2: Установка системных пакетов..."
 apt install -y ufw fail2ban net-tools htop nethogs iotop curl wget git
 if [ $? -eq 0 ]; then
-    print_status "Packages installed successfully"
+    print_status "Пакеты успешно установлены"
 else
-    print_error "Package installation failed"
+    print_error "Ошибка установки пакетов"
     exit 1
 fi
 
-# Step 3: Configure UFW firewall
-print_status "Step 3: Configuring UFW firewall..."
-# Reset UFW to defaults
+# Шаг 3: Настройка фаервола UFW
+print_status "Шаг 3: Настройка фаервола UFW..."
+
+# Сброс UFW к настройкам по умолчанию
 ufw --force reset
 
-# Deny all incoming, allow all outgoing
+# Запретить все входящие, разрешить все исходящие
 ufw default deny incoming
 ufw default allow outgoing
 
-# Allow SSH on port 22
+# Разрешить SSH на порту 22
 ufw allow 22/tcp
 
-# Enable UFW
+# ЗАКРЫТЬ ICMP (ping) - важное изменение!
+ufw deny in proto icmp
+
+# Включить UFW
 ufw --force enable
 
-print_status "UFW configured: only SSH (22/tcp) allowed"
+print_status "UFW настроен: разрешен только SSH (22/tcp), ICMP (ping) ЗАКРЫТ"
 
-# Step 4: Configure Fail2Ban for SSH
-print_status "Step 4: Configuring Fail2Ban..."
+# Шаг 4: Настройка Fail2Ban для защиты SSH
+print_status "Шаг 4: Настройка Fail2Ban..."
 cat > /etc/fail2ban/jail.local << 'EOF'
 [DEFAULT]
 bantime = 3600
@@ -83,38 +87,38 @@ EOF
 
 systemctl enable fail2ban
 systemctl start fail2ban
-print_status "Fail2Ban configured for SSH protection"
+print_status "Fail2Ban настроен для защиты SSH"
 
-# Step 5: Create swap file
-print_status "Step 5: Creating 2GB swap file..."
+# Шаг 5: Создание swap файла 2GB
+print_status "Шаг 5: Создание swap файла 2GB..."
 
-# Check if swap already exists
+# Проверка существующего swap
 if swapon --show | grep -q "."; then
-    print_warning "Swap already exists. Skipping swap creation."
+    print_warning "Swap уже существует. Пропускаем создание."
 else
-    # Create 2GB swap file
+    # Создание swap файла 2GB
     fallocate -l 2G /swapfile
     chmod 600 /swapfile
     mkswap /swapfile
     swapon /swapfile
     
-    # Make swap permanent
+    # Добавление в fstab для автозагрузки
     echo '/swapfile none swap sw 0 0' >> /etc/fstab
     
-    print_status "2GB swap file created and activated"
+    print_status "Swap файл 2GB создан и активирован"
 fi
 
-# Step 6: System optimization
-print_status "Step 6: Applying system optimizations..."
+# Шаг 6: Оптимизация системы
+print_status "Шаг 6: Применение системных оптимизаций..."
 
-# Create sysctl configuration
+# Создание конфигурации sysctl
 cat > /etc/sysctl.d/99-optimization.conf << 'EOF'
-# Network optimizations
+# Сетевые оптимизации
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 net.ipv4.tcp_fastopen = 3
 
-# Memory and buffer optimizations
+# Оптимизация памяти и буферов
 net.core.rmem_max = 67108864
 net.core.wmem_max = 67108864
 net.core.rmem_default = 131072
@@ -123,7 +127,7 @@ net.ipv4.tcp_rmem = 4096 87380 67108864
 net.ipv4.tcp_wmem = 4096 65536 67108864
 net.ipv4.tcp_mem = 786432 1048576 1572864
 
-# Connection optimizations
+# Оптимизация соединений
 net.ipv4.tcp_slow_start_after_idle = 0
 net.ipv4.tcp_max_syn_backlog = 65536
 net.ipv4.tcp_synack_retries = 2
@@ -137,98 +141,62 @@ net.core.somaxconn = 65535
 net.ipv4.tcp_max_tw_buckets = 1440000
 net.ipv4.tcp_tw_reuse = 1
 
-# Additional optimizations
+# Дополнительные оптимизации
 net.ipv4.tcp_limit_output_bytes = 262144
 net.ipv4.tcp_moderate_rcvbuf = 1
 
-# Memory and swap optimizations
+# Оптимизация памяти и swap
 vm.swappiness = 10
 vm.dirty_ratio = 15
 vm.dirty_background_ratio = 5
 
-# IPv6 disable (optional - remove if you need IPv6)
+# Отключение IPv6 (можно удалить если нужен IPv6)
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 EOF
 
-# Apply sysctl settings
+# Применение настроек sysctl
 sysctl -p /etc/sysctl.d/99-optimization.conf
 
-print_status "System optimizations applied"
+print_status "Системные оптимизации применены"
 
-# Step 7: Configure SSH for key authentication only
-print_status "Step 7: Configuring SSH for key authentication..."
+# Шаг 7: Настройка SSH (только для ключей) - УБРАНА, так как ключ уже в ЛК хостера
+print_status "Шаг 7: Проверка настроек SSH..."
+print_warning "SSH ключ должен быть уже настроен в личном кабинете хостера"
+print_warning "Дополнительная настройка SSH не требуется"
 
-# Backup original sshd_config
-cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+# Шаг 8: Финальные проверки
+print_status "Шаг 8: Финальные проверки..."
 
-# Configure SSH for key-only authentication
-cat > /etc/ssh/sshd_config.d/99-custom.conf << 'EOF'
-# Key authentication only
-PasswordAuthentication no
-ChallengeResponseAuthentication no
-UsePAM no
-
-# Security settings
-PermitRootLogin yes
-PubkeyAuthentication yes
-AuthorizedKeysFile .ssh/authorized_keys
-
-# Performance settings
-ClientAliveInterval 300
-ClientAliveCountMax 2
-MaxAuthTries 3
-MaxSessions 10
-
-# Protocol settings
-Protocol 2
-HostKey /etc/ssh/ssh_host_rsa_key
-HostKey /etc/ssh/ssh_host_ed25519_key
-
-# Cipher settings
-KexAlgorithms curve25519-sha256@libssh.org
-Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
-MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
-EOF
-
-# Restart SSH service
-systemctl restart ssh
-
-print_warning "SSH configured for key authentication only!"
-print_warning "Make sure you have SSH keys configured before disconnecting!"
-
-# Step 8: Final checks
-print_status "Step 8: Performing final checks..."
-
-# Check swap
-echo "--- Swap Status ---"
+# Проверка swap
+echo "--- Статус Swap ---"
 swapon --show
 free -h
 
-# Check UFW status
-echo "--- UFW Status ---"
+# Проверка статуса UFW
+echo "--- Статус UFW ---"
 ufw status
 
-# Check Fail2Ban status
-echo "--- Fail2Ban Status ---"
+# Проверка статуса Fail2Ban
+echo "--- Статус Fail2Ban ---"
 systemctl status fail2ban --no-pager -l
 
-# Check optimization settings
-echo "--- Optimization Settings ---"
+# Проверка оптимизаций
+echo "--- Применённые оптимизации ---"
 sysctl net.ipv4.tcp_congestion_control
 sysctl vm.swappiness
 
-print_status "VPS setup completed successfully!"
-print_warning "IMPORTANT: Ensure SSH keys are configured before next login!"
-print_warning "Current SSH session will remain active. Test new connection in another terminal first."
-
+# Финальный вывод
 echo "----------------------------------------"
-echo "Summary of changes:"
-echo "✅ System updated"
-echo "✅ UFW configured (SSH only)"
-echo "✅ Fail2Ban installed and configured"
-echo "✅ 2GB swap file created"
-echo "✅ System optimizations applied"
-echo "✅ SSH configured for key authentication"
+echo "Итог выполненных изменений:"
+echo "✅ Система обновлена"
+echo "✅ UFW настроен (только SSH 22/tcp)"
+echo "✅ ICMP (ping) ЗАКРЫТ ‼️"
+echo "✅ Fail2Ban установлен и настроен"
+echo "✅ Swap файл 2GB создан"
+echo "✅ Системные оптимизации применены"
+echo "✅ SSH работает с ключами (настройте в ЛК хостера)"
 echo "----------------------------------------"
+echo ""
+print_status "Для проверки подключения используйте: ssh root@your-server"
