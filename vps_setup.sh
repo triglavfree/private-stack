@@ -102,14 +102,16 @@ sysctl -p /etc/sysctl.d/99-optimization.conf
 
 # Стильный и скромный финальный вывод
 echo
-echo -e "${CYAN}┌──────────────────────────────────────────────────────┐${NC}"
-echo -e "${CYAN}│                  Настройка завершена                  │${NC}"
-echo -e "${CYAN}└──────────────────────────────────────────────────────┘${NC}"
+echo -e "${CYAN}┌────────────────────────────────────────────────────────────┐${NC}"
+echo -e "${CYAN}│                                                            │${NC}"
+echo -e "${CYAN}│                    Настройка завершена                     │${NC}"
+echo -e "${CYAN}│                                                            │${NC}"
+echo -e "${CYAN}└────────────────────────────────────────────────────────────┘${NC}"
 echo
-echo -e "${GREEN}✓ Система обновлена и оптимизирована${NC}"
-echo -e "${GREEN}✓ Фаервол UFW активен (SSH 22/tcp)${NC}"
-echo -e "${GREEN}✓ Fail2Ban защищает от брутфорса${NC}"
-echo -e "${GREEN}✓ Swap 2GB создан${NC}"
+echo -e "${GREEN}✓  Система обновлена и оптимизирована${NC}"
+echo -e "${GREEN}✓  Фаервол UFW активен (SSH 22/tcp)${NC}"
+echo -e "${GREEN}✓  Fail2Ban защищает от брутфорса${NC}"
+echo -e "${GREEN}✓  Swap 2GB создан${NC}"
 echo
 echo -e "${YELLOW}⚠  ICMP (ping) закрыт${NC}"
 echo -e "${YELLOW}⚠  SSH доступ только по ключам${NC}"
