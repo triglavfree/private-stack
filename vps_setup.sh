@@ -112,7 +112,7 @@ echo -e "${GREEN}✓  Fail2Ban защищает от брутфорса${NC}"
 echo -e "${GREEN}✓  Swap 2GB создан${NC}"
 echo
 echo -e "${YELLOW}⚠  ICMP (ping) закрыт${NC}"
-echo -e "${YELLOW}⚠  SSH доступ только по ключам${NC}"
+echo -e "${YELLOW}⚠  SSH доступ только 🗝${NC}"
 echo
 echo -e "${BLUE}Подключение:${NC}"
 echo -e "  ${CYAN}ssh root@${EXTERNAL_IP}${NC}"
