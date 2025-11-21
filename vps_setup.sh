@@ -100,6 +100,13 @@ EOF
 
 sysctl -p /etc/sysctl.d/99-optimization.conf
 
+# Явно отключаем парольную аутентификацию в SSH
+print_status "Отключение парольной аутентификации SSH..."
+sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+systemctl restart ssh
+
 # Финальный вывод
 echo
 echo -e "${CYAN}┌────────────────────────────────────────┐${NC}"
@@ -115,5 +122,6 @@ echo -e "${YELLOW}⚠  ICMP (ping) закрыт${NC}"
 echo -e "${YELLOW}⚠ SSH доступ только по 🔑${NC}"
 echo
 echo -e "${BLUE}Подключение:${NC}"
-echo -e "  ${CYAN}ssh root@${EXTERNAL_IP}${NC}"
+echo -e "  ${CYAN}ssh root@${EXTERNAL_IP}${NC}"echo -e "${YELLOW}[1m‼ ПРОВЕРЬТЕ ПОДКЛЮЧЕНИЕ ПЕРЕД ВЫХОДОМ! ‼${NC}[0m"
+
 echo
