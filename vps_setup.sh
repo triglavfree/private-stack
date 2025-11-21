@@ -118,11 +118,10 @@ echo -e "${GREEN}✓  Фаервол UFW активен (SSH 22/tcp)${NC}"
 echo -e "${GREEN}✓  Fail2Ban защищает от брутфорса${NC}"
 echo -e "${GREEN}✓  Swap 2GB создан${NC}"
 echo
-echo -e "${YELLOW}⚠  ICMP (ping) закрыт${NC}"
-echo -e "${YELLOW}⚠  SSH доступ только по 🔑${NC}"
+echo -e "${YELLOW}⚠ ICMP (ping) закрыт${NC}"
+echo -e "${YELLOW}⚠ SSH доступ только по 🔑 (пароль отключён)${NC}"
 echo
 echo -e "${BLUE}Подключение:${NC}"
 echo -e "  ${CYAN}ssh root@${EXTERNAL_IP}${NC}"
 echo -e "${YELLOW}[1m‼ ПРОВЕРЬТЕ ПОДКЛЮЧЕНИЕ ПЕРЕД ВЫХОДОМ! ‼${NC}[0m"
-
 echo
