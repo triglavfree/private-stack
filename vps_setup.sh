@@ -106,7 +106,7 @@ sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_
 sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 systemctl restart ssh
-
+clear
 # Финальный вывод
 echo
 echo -e "${CYAN}┌────────────────────────────────────────┐${NC}"
