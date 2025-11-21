@@ -13,7 +13,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Обновление системы и установка пакетов
-apt update
+apt update && apt full-upgrade -y
 apt install net-tools qrencode curl jq  -y
 
 # Отключение IPv6 для безопасности и производительности
