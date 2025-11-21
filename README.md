@@ -53,7 +53,7 @@
 ---
 ## ‼️Подготовка VPS
 ```bash
-curl -sSL https://raw.githubusercontent.com/yourusername/vps-setup/main/vps_setup.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/triglavfreeprivate-stack/main/vps_setup.sh | sudo bash
 ```
 ## 🚀 ЗАПУСК СКРИПТА
 ###  [xray-core](https://github.com/XTLS/Xray-core) *Индивидуальный*
