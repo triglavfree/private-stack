@@ -122,6 +122,7 @@ echo -e "${YELLOW}⚠  ICMP (ping) закрыт${NC}"
 echo -e "${YELLOW}⚠ SSH доступ только по 🔑${NC}"
 echo
 echo -e "${BLUE}Подключение:${NC}"
-echo -e "  ${CYAN}ssh root@${EXTERNAL_IP}${NC}"echo -e "${YELLOW}[1m‼ ПРОВЕРЬТЕ ПОДКЛЮЧЕНИЕ ПЕРЕД ВЫХОДОМ! ‼${NC}[0m"
+echo -e "  ${CYAN}ssh root@${EXTERNAL_IP}${NC}"
+echo -e "${YELLOW}[1m‼ ПРОВЕРЬТЕ ПОДКЛЮЧЕНИЕ ПЕРЕД ВЫХОДОМ! ‼${NC}[0m"
 
 echo
